@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { Item, ItemPayload, ItemSummary, VaultStatus } from "../types/vault";
+import type { BrowserConfig, ImportRow, Item, ItemPayload, ItemSummary, VaultStatus } from "../types/vault";
 
 export const vaultStatus = () =>
   invoke<VaultStatus>("vault_status");
@@ -52,3 +52,18 @@ export const changeMasterPassword = (
   newPassword: string
 ) =>
   invoke<void>("change_master_password", { oldPassword, newPassword });
+
+export const getBrowserIntegrations = () =>
+  invoke<BrowserConfig>("get_browser_integrations");
+
+export const saveBrowserIntegrations = (chromeIds: string[], firefoxIds: string[]) =>
+  invoke<string>("save_browser_integrations", { chromeIds, firefoxIds });
+
+export const getNativeHostPath = () =>
+  invoke<string | null>("get_native_host_path");
+
+export const parseImportCsv = (content: string) =>
+  invoke<ImportRow[]>("parse_import_csv", { content });
+
+export const importItemsFromCsv = (items: ImportRow[]) =>
+  invoke<number>("import_items_from_csv", { items });

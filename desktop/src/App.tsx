@@ -130,7 +130,10 @@ export default function App() {
 
   if (page.name === "settings") {
     return (
-      <Settings onBack={() => setPage({ name: "vault" })} />
+      <Settings
+        onBack={() => setPage({ name: "vault" })}
+        onImported={refresh}
+      />
     );
   }
 

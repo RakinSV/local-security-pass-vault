@@ -1,43 +1,30 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { PasswordField } from "../components/PasswordField";
-import { changeMasterPassword } from "../api/vault";
+import {
+  changeMasterPassword,
+  getBrowserIntegrations,
+  saveBrowserIntegrations,
+  getNativeHostPath,
+  parseImportCsv,
+  importItemsFromCsv,
+} from "../api/vault";
+import type { BrowserConfig, ImportRow } from "../types/vault";
 
 interface Props {
   onBack: () => void;
+  onImported?: () => void;
 }
 
-export function Settings({ onBack }: Props) {
-  const [oldPw, setOldPw] = useState("");
-  const [newPw, setNewPw] = useState("");
-  const [confirmPw, setConfirmPw] = useState("");
-  const [error, setError] = useState("");
-  const [success, setSuccess] = useState(false);
-  const [loading, setLoading] = useState(false);
+type Tab = "security" | "browser" | "import";
 
-  async function handleChange(e: React.FormEvent) {
-    e.preventDefault();
-    setError("");
-    setSuccess(false);
+export function Settings({ onBack, onImported }: Props) {
+  const [tab, setTab] = useState<Tab>("security");
 
-    if (newPw.length < 8) { setError("New password must be at least 8 characters."); return; }
-    if (newPw !== confirmPw) { setError("Passwords do not match."); return; }
-
-    setLoading(true);
-    try {
-      await changeMasterPassword(oldPw, newPw);
-      setSuccess(true);
-      setOldPw(""); setNewPw(""); setConfirmPw("");
-    } catch (err) {
-      const msg = String(err);
-      if (msg.includes("DecryptionFailed") || msg.includes("decryption")) {
-        setError("Current password is incorrect.");
-      } else {
-        setError(msg);
-      }
-    } finally {
-      setLoading(false);
-    }
-  }
+  const tabs: { id: Tab; label: string }[] = [
+    { id: "security", label: "Security" },
+    { id: "browser", label: "Browser" },
+    { id: "import",  label: "Import"  },
+  ];
 
   return (
     <div className="flex flex-col h-screen">
@@ -51,35 +38,360 @@ export function Settings({ onBack }: Props) {
         <div className="flex-1 font-medium">Settings</div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-6 max-w-md mx-auto w-full">
-        <h3 className="font-semibold mb-4">Change master password</h3>
+      {/* Tab bar */}
+      <div className="flex border-b border-[var(--border)] px-4">
+        {tabs.map(t => (
+          <button
+            key={t.id}
+            onClick={() => setTab(t.id)}
+            className={`px-5 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px ${
+              tab === t.id
+                ? "border-[var(--accent)] text-[var(--accent)]"
+                : "border-transparent text-[var(--muted)] hover:text-[var(--text)]"
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
 
-        <form onSubmit={handleChange} className="flex flex-col gap-4">
-          <PasswordField label="Current password" value={oldPw} onChange={setOldPw} autoFocus />
-          <PasswordField label="New password" value={newPw} onChange={setNewPw} placeholder="At least 8 characters" />
-          <PasswordField label="Confirm new password" value={confirmPw} onChange={setConfirmPw} />
+      <div className="flex-1 overflow-y-auto">
+        {tab === "security" && <SecurityTab />}
+        {tab === "browser"  && <BrowserTab />}
+        {tab === "import"   && <ImportTab onImported={onImported} />}
+      </div>
+    </div>
+  );
+}
 
-          {error && (
-            <div className="text-[var(--danger)] text-sm bg-red-950/30 border border-red-900/40 rounded-lg px-3 py-2">
-              {error}
+// ── Security Tab ──────────────────────────────────────────────────────────────
+
+function SecurityTab() {
+  const [oldPw,     setOldPw]     = useState("");
+  const [newPw,     setNewPw]     = useState("");
+  const [confirmPw, setConfirmPw] = useState("");
+  const [error,   setError]   = useState("");
+  const [success, setSuccess] = useState(false);
+  const [loading, setLoading] = useState(false);
+
+  async function handleChange(e: React.FormEvent) {
+    e.preventDefault();
+    setError(""); setSuccess(false);
+    if (newPw.length < 8)     { setError("New password must be at least 8 characters."); return; }
+    if (newPw !== confirmPw)  { setError("Passwords do not match."); return; }
+    setLoading(true);
+    try {
+      await changeMasterPassword(oldPw, newPw);
+      setSuccess(true);
+      setOldPw(""); setNewPw(""); setConfirmPw("");
+    } catch (err) {
+      const msg = String(err);
+      setError(msg.includes("DecryptionFailed") || msg.includes("decryption")
+        ? "Current password is incorrect."
+        : msg);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="p-6 max-w-md mx-auto w-full">
+      <h3 className="font-semibold mb-4">Change master password</h3>
+      <form onSubmit={handleChange} className="flex flex-col gap-4">
+        <PasswordField label="Current password"     value={oldPw}     onChange={setOldPw}     autoFocus />
+        <PasswordField label="New password"         value={newPw}     onChange={setNewPw}     placeholder="At least 8 characters" />
+        <PasswordField label="Confirm new password" value={confirmPw} onChange={setConfirmPw} />
+        {error   && <Alert type="error">{error}</Alert>}
+        {success && <Alert type="success">Password changed successfully.</Alert>}
+        <button
+          type="submit"
+          disabled={loading || !oldPw || !newPw || !confirmPw}
+          className="w-full bg-[var(--accent)] hover:bg-[var(--accent-hover)] disabled:opacity-40
+                     text-white font-medium py-3 rounded-xl transition-colors"
+        >
+          {loading ? "Changing…" : "Change password"}
+        </button>
+      </form>
+    </div>
+  );
+}
+
+// ── Browser Tab ───────────────────────────────────────────────────────────────
+
+function BrowserTab() {
+  const [cfg,     setCfg]     = useState<BrowserConfig>({ chromeIds: [], firefoxIds: [] });
+  const [hostPath, setHostPath] = useState<string | null>(null);
+  const [chromeInput,  setChromeInput]  = useState("");
+  const [firefoxInput, setFirefoxInput] = useState("");
+  const [status, setStatus] = useState<{ type: "success" | "error"; msg: string } | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving,  setSaving]  = useState(false);
+
+  useEffect(() => {
+    Promise.all([getBrowserIntegrations(), getNativeHostPath()])
+      .then(([c, p]) => { setCfg(c); setHostPath(p); })
+      .catch(console.error)
+      .finally(() => setLoading(false));
+  }, []);
+
+  function addId(
+    field: "chromeIds" | "firefoxIds",
+    input: string,
+    setInput: (v: string) => void,
+  ) {
+    const id = input.trim();
+    if (!id || cfg[field].includes(id)) return;
+    setCfg(prev => ({ ...prev, [field]: [...prev[field], id] }));
+    setInput("");
+    setStatus(null);
+  }
+
+  function removeId(field: "chromeIds" | "firefoxIds", id: string) {
+    setCfg(prev => ({ ...prev, [field]: prev[field].filter(x => x !== id) }));
+    setStatus(null);
+  }
+
+  async function handleApply() {
+    setSaving(true); setStatus(null);
+    try {
+      const path = await saveBrowserIntegrations(cfg.chromeIds, cfg.firefoxIds);
+      setHostPath(path);
+      setStatus({ type: "success", msg: `Registered. Native host:\n${path}` });
+    } catch (err) {
+      setStatus({ type: "error", msg: String(err) });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (loading) return <div className="p-6 text-[var(--muted)] text-sm">Loading…</div>;
+
+  return (
+    <div className="p-6 max-w-lg mx-auto w-full flex flex-col gap-6">
+      {/* Native host status */}
+      <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4 text-sm">
+        <div className="font-medium mb-1.5">Native host binary</div>
+        {hostPath ? (
+          <div className="text-[var(--success)] font-mono text-xs break-all">{hostPath}</div>
+        ) : (
+          <div>
+            <div className="text-[var(--danger)] mb-1">Not found — build first:</div>
+            <pre className="text-xs bg-black/30 rounded-lg px-3 py-2 text-[var(--muted)] overflow-x-auto">
+              cargo build -p vaultpass-native-host --release
+            </pre>
+          </div>
+        )}
+      </div>
+
+      {/* Chrome / Edge */}
+      <IdSection
+        label="Chrome / Edge extension IDs"
+        hint='chrome://extensions → enable Developer mode → copy the ID shown under VaultPass.'
+        ids={cfg.chromeIds}
+        input={chromeInput}
+        onInputChange={setChromeInput}
+        onAdd={() => addId("chromeIds", chromeInput, setChromeInput)}
+        onRemove={id => removeId("chromeIds", id)}
+      />
+
+      {/* Firefox */}
+      <IdSection
+        label="Firefox extension IDs"
+        hint='about:debugging → This Firefox → VaultPass → copy "Internal UUID".'
+        ids={cfg.firefoxIds}
+        input={firefoxInput}
+        onInputChange={setFirefoxInput}
+        onAdd={() => addId("firefoxIds", firefoxInput, setFirefoxInput)}
+        onRemove={id => removeId("firefoxIds", id)}
+      />
+
+      {status && <Alert type={status.type}>{status.msg}</Alert>}
+
+      <button
+        onClick={handleApply}
+        disabled={saving || (cfg.chromeIds.length === 0 && cfg.firefoxIds.length === 0)}
+        className="w-full bg-[var(--accent)] hover:bg-[var(--accent-hover)] disabled:opacity-40
+                   text-white font-medium py-3 rounded-xl transition-colors"
+      >
+        {saving ? "Applying…" : "Apply & Register"}
+      </button>
+    </div>
+  );
+}
+
+interface IdSectionProps {
+  label: string;
+  hint: string;
+  ids: string[];
+  input: string;
+  onInputChange: (v: string) => void;
+  onAdd: () => void;
+  onRemove: (id: string) => void;
+}
+
+function IdSection({ label, hint, ids, input, onInputChange, onAdd, onRemove }: IdSectionProps) {
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="font-medium text-sm">{label}</div>
+      <div className="text-xs text-[var(--muted)]">{hint}</div>
+      <div className="flex gap-2">
+        <input
+          type="text"
+          value={input}
+          onChange={e => onInputChange(e.target.value)}
+          onKeyDown={e => e.key === "Enter" && onAdd()}
+          placeholder="Extension ID…"
+          className="flex-1 bg-[var(--surface)] border border-[var(--border)] rounded-lg px-3 py-2
+                     text-sm font-mono text-[var(--text)] placeholder-[var(--muted)]
+                     focus:outline-none focus:border-[var(--accent)] transition-colors"
+        />
+        <button
+          onClick={onAdd}
+          disabled={!input.trim()}
+          className="px-4 py-2 bg-[var(--surface)] border border-[var(--border)] rounded-lg text-sm
+                     hover:border-[var(--accent)] hover:text-[var(--accent)] disabled:opacity-40 transition-colors"
+        >
+          Add
+        </button>
+      </div>
+      {ids.length > 0 && (
+        <div className="flex flex-col gap-1">
+          {ids.map(id => (
+            <div key={id}
+              className="flex items-center gap-2 bg-[var(--surface)] border border-[var(--border)]
+                         rounded-lg px-3 py-2"
+            >
+              <span className="flex-1 font-mono text-xs text-[var(--text)] break-all">{id}</span>
+              <button
+                onClick={() => onRemove(id)}
+                className="text-[var(--muted)] hover:text-[var(--danger)] text-sm flex-shrink-0 transition-colors"
+                title="Remove"
+              >
+                ✕
+              </button>
             </div>
-          )}
-          {success && (
-            <div className="text-[var(--success)] text-sm bg-green-950/30 border border-green-900/40 rounded-lg px-3 py-2">
-              Password changed successfully.
-            </div>
-          )}
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Import Tab ────────────────────────────────────────────────────────────────
+
+function ImportTab({ onImported }: { onImported?: () => void }) {
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [rows,   setRows]   = useState<ImportRow[]>([]);
+  const [error,  setError]  = useState("");
+  const [importing, setImporting] = useState(false);
+  const [importedCount, setImportedCount] = useState<number | null>(null);
+
+  async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setError(""); setRows([]); setImportedCount(null);
+    try {
+      const text = await file.text();
+      const parsed = await parseImportCsv(text);
+      setRows(parsed);
+    } catch (err) {
+      setError(String(err));
+    }
+    e.target.value = "";
+  }
+
+  async function handleImport() {
+    setImporting(true); setError("");
+    try {
+      const count = await importItemsFromCsv(rows);
+      setImportedCount(count);
+      setRows([]);
+      onImported?.();
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setImporting(false);
+    }
+  }
+
+  return (
+    <div className="p-6 max-w-lg mx-auto w-full flex flex-col gap-5">
+      <div>
+        <h3 className="font-semibold mb-1">Import from browser</h3>
+        <p className="text-[var(--muted)] text-sm leading-relaxed">
+          Accepts CSV exports from Chrome
+          {" "}(<span className="font-mono text-xs">chrome://password-manager → Settings → Export</span>)
+          {" "}and Firefox
+          {" "}(<span className="font-mono text-xs">about:logins → ··· → Export Logins…</span>).
+        </p>
+      </div>
+
+      <input ref={fileRef} type="file" accept=".csv,text/csv" onChange={handleFile} className="hidden" />
+
+      <button
+        onClick={() => fileRef.current?.click()}
+        className="w-full border-2 border-dashed border-[var(--border)] hover:border-[var(--accent)]
+                   rounded-xl py-8 text-sm text-[var(--muted)] hover:text-[var(--text)] transition-colors"
+      >
+        📂 Choose CSV file…
+      </button>
+
+      {error && <Alert type="error">{error}</Alert>}
+
+      {importedCount !== null && (
+        <Alert type="success">
+          ✓ Imported {importedCount} item{importedCount !== 1 ? "s" : ""} — go back to see them in your vault.
+        </Alert>
+      )}
+
+      {rows.length > 0 && (
+        <>
+          <div className="text-sm text-[var(--muted)]">{rows.length} items found:</div>
+          <div className="border border-[var(--border)] rounded-xl overflow-hidden max-h-72 overflow-y-auto">
+            <table className="w-full text-xs">
+              <thead className="sticky top-0 bg-[var(--surface)] border-b border-[var(--border)]">
+                <tr>
+                  <th className="text-left px-3 py-2 text-[var(--muted)] font-medium">Title</th>
+                  <th className="text-left px-3 py-2 text-[var(--muted)] font-medium">URL</th>
+                  <th className="text-left px-3 py-2 text-[var(--muted)] font-medium">Username</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((r, i) => (
+                  <tr key={i} className="border-b border-[var(--border)]/40 last:border-0 hover:bg-[var(--surface)]/50">
+                    <td className="px-3 py-1.5 text-[var(--text)]">{r.title}</td>
+                    <td className="px-3 py-1.5 text-[var(--muted)] truncate max-w-[130px]" title={r.url}>{r.url}</td>
+                    <td className="px-3 py-1.5 text-[var(--muted)]">{r.username}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
 
           <button
-            type="submit"
-            disabled={loading || !oldPw || !newPw || !confirmPw}
+            onClick={handleImport}
+            disabled={importing}
             className="w-full bg-[var(--accent)] hover:bg-[var(--accent-hover)] disabled:opacity-40
                        text-white font-medium py-3 rounded-xl transition-colors"
           >
-            {loading ? "Changing…" : "Change password"}
+            {importing ? "Importing…" : `Import ${rows.length} item${rows.length !== 1 ? "s" : ""}`}
           </button>
-        </form>
-      </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ── Shared ────────────────────────────────────────────────────────────────────
+
+function Alert({ type, children }: { type: "success" | "error"; children: React.ReactNode }) {
+  return (
+    <div className={`text-sm rounded-lg px-3 py-2 whitespace-pre-wrap ${
+      type === "error"
+        ? "text-[var(--danger)] bg-red-950/30 border border-red-900/40"
+        : "text-[var(--success)] bg-green-950/30 border border-green-900/40"
+    }`}>
+      {children}
     </div>
   );
 }

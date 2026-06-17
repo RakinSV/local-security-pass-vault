@@ -1,4 +1,6 @@
+mod browser_integration;
 mod commands;
+mod csv_import;
 mod ed25519_key;
 mod error;
 mod pipe_server;
@@ -51,6 +53,11 @@ pub fn run() {
             commands::delete_item,
             commands::change_master_password,
             commands::get_signing_public_key,
+            commands::get_browser_integrations,
+            commands::save_browser_integrations,
+            commands::get_native_host_path,
+            commands::parse_import_csv,
+            commands::import_items_from_csv,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

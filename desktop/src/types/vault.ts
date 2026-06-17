@@ -80,3 +80,15 @@ export interface Item extends ItemSummary {
 export interface VaultStatus {
   isLocked: boolean;
 }
+
+export interface BrowserConfig {
+  chromeIds: string[];
+  firefoxIds: string[];
+}
+
+export interface ImportRow {
+  title: string;
+  url: string;
+  username: string;
+  password: string;
+}

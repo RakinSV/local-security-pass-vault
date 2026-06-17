@@ -203,3 +203,80 @@ pub async fn get_signing_public_key(state: State<'_, AppState>) -> Result<String
         .clone()
         .ok_or(AppError::Other("signing key not ready".into()))
 }
+
+// ── Browser integration ────────────────────────────────────────────────────────
+
+/// Returns the current list of registered extension IDs (Chrome + Firefox).
+#[tauri::command]
+pub async fn get_browser_integrations(
+    app: tauri::AppHandle,
+) -> Result<crate::browser_integration::BrowserConfig, AppError> {
+    let data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| AppError::Other(e.to_string()))?;
+    Ok(crate::browser_integration::load(&data_dir))
+}
+
+/// Saves the extension ID lists, writes the native messaging manifest JSON,
+/// and registers it in the OS (registry on Windows, manifest files on Linux/Mac).
+/// Returns the absolute path to the native host binary.
+#[tauri::command]
+pub async fn save_browser_integrations(
+    app: tauri::AppHandle,
+    chrome_ids: Vec<String>,
+    firefox_ids: Vec<String>,
+) -> Result<String, AppError> {
+    let data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| AppError::Other(e.to_string()))?;
+    let config = crate::browser_integration::BrowserConfig { chrome_ids, firefox_ids };
+    crate::browser_integration::install(&data_dir, &config).map_err(AppError::Other)
+}
+
+/// Returns the absolute path to the native host binary if it can be found, or null.
+#[tauri::command]
+pub async fn get_native_host_path() -> Option<String> {
+    crate::browser_integration::find_native_host_binary()
+        .map(|p| p.to_string_lossy().into_owned())
+}
+
+// ── CSV import ─────────────────────────────────────────────────────────────────
+
+/// Parses a Chrome or Firefox CSV export and returns the preview rows.
+#[tauri::command]
+pub async fn parse_import_csv(
+    content: String,
+) -> Result<Vec<crate::csv_import::ImportRow>, AppError> {
+    crate::csv_import::parse(&content).map_err(AppError::Other)
+}
+
+/// Inserts the given rows into the vault as Login items.
+/// Returns the number of items imported.
+#[tauri::command]
+pub async fn import_items_from_csv(
+    state: State<'_, AppState>,
+    items: Vec<crate::csv_import::ImportRow>,
+) -> Result<usize, AppError> {
+    let mut guard = state.vault.lock().map_err(|_| AppError::LockPoisoned)?;
+    let vault = guard.as_mut().ok_or(AppError::VaultLocked)?;
+
+    let count = items.len();
+    for row in items {
+        let payload = core_vault::models::ItemPayload::Login {
+            url: row.url,
+            username: row.username,
+            password: row.password,
+            totp_secret: None,
+            notes: None,
+            custom_fields: vec![],
+            password_history: vec![],
+        };
+        vault.add_item(&row.title, payload, None, false)?;
+    }
+    if count > 0 {
+        vault.save()?;
+    }
+    Ok(count)
+}
