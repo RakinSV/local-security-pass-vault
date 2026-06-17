@@ -37,12 +37,13 @@ function getPort(): chrome.runtime.Port {
 
 const SIGN_PK_STORAGE_KEY = "vaultpass_signing_pk_hex";
 
-function hexToBytes(hex: string): Uint8Array {
+/** Decode hex string → ArrayBuffer (avoids Uint8Array<ArrayBufferLike> type issue with SubtleCrypto). */
+function hexToBuffer(hex: string): ArrayBuffer {
   const bytes = new Uint8Array(hex.length / 2);
   for (let i = 0; i < hex.length; i += 2) {
     bytes[i / 2] = parseInt(hex.slice(i, i + 2), 16);
   }
-  return bytes;
+  return bytes.buffer as ArrayBuffer;
 }
 
 /**
@@ -70,19 +71,22 @@ async function verifyResponseSignature(response: NativeResponse): Promise<void> 
   if (!pkHex) return; // no stored key yet — first-run grace period
 
   try {
-    const keyBytes = hexToBytes(pkHex);
     const cryptoKey = await crypto.subtle.importKey(
       "raw",
-      keyBytes,
+      hexToBuffer(pkHex),
       { name: "Ed25519" },
       false,
       ["verify"]
     );
-    const msg = new TextEncoder().encode(
-      response.id + JSON.stringify(response.data)
+    const msgBuf = new TextEncoder()
+      .encode(response.id + JSON.stringify(response.data))
+      .buffer as ArrayBuffer;
+    const valid = await crypto.subtle.verify(
+      "Ed25519",
+      cryptoKey,
+      hexToBuffer(response.signature),
+      msgBuf
     );
-    const sig = hexToBytes(response.signature);
-    const valid = await crypto.subtle.verify("Ed25519", cryptoKey, sig, msg);
     if (!valid) {
       throw new Error("IPC signature invalid — response may be tampered");
     }
