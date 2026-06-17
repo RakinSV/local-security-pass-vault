@@ -92,3 +92,10 @@ export interface ImportRow {
   username: string;
   password: string;
 }
+
+export interface ProfileInfo {
+  id: string;
+  email: string | null;
+  name: string | null;
+  lastSeenMs: number;
+}

@@ -204,6 +204,35 @@ pub async fn get_signing_public_key(state: State<'_, AppState>) -> Result<String
         .ok_or(AppError::Other("signing key not ready".into()))
 }
 
+// ── Browser profiles ──────────────────────────────────────────────────────────
+
+/// Returns all Chrome profiles that have ever connected to VaultPass, sorted newest-first.
+#[tauri::command]
+pub async fn get_profiles(
+    app: tauri::AppHandle,
+) -> Result<Vec<crate::profile_registry::Profile>, AppError> {
+    let data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| AppError::Other(e.to_string()))?;
+    Ok(crate::profile_registry::list(&data_dir))
+}
+
+/// Set (or clear) a user-defined display name for a profile.
+#[tauri::command]
+pub async fn set_profile_name(
+    app: tauri::AppHandle,
+    profile_id: String,
+    name: Option<String>,
+) -> Result<(), AppError> {
+    let data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| AppError::Other(e.to_string()))?;
+    crate::profile_registry::set_name(&data_dir, &profile_id, name);
+    Ok(())
+}
+
 // ── Browser integration ────────────────────────────────────────────────────────
 
 /// Returns the current list of registered extension IDs (Chrome + Firefox).

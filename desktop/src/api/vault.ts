@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { BrowserConfig, ImportRow, Item, ItemPayload, ItemSummary, VaultStatus } from "../types/vault";
+import type { BrowserConfig, ImportRow, Item, ItemPayload, ItemSummary, ProfileInfo, VaultStatus } from "../types/vault";
 
 export const vaultStatus = () =>
   invoke<VaultStatus>("vault_status");
@@ -67,3 +67,9 @@ export const parseImportCsv = (content: string) =>
 
 export const importItemsFromCsv = (items: ImportRow[]) =>
   invoke<number>("import_items_from_csv", { items });
+
+export const getProfiles = () =>
+  invoke<ProfileInfo[]>("get_profiles");
+
+export const setProfileName = (profileId: string, name: string | null) =>
+  invoke<void>("set_profile_name", { profileId, name });

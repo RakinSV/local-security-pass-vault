@@ -7,8 +7,10 @@ import {
   getNativeHostPath,
   parseImportCsv,
   importItemsFromCsv,
+  getProfiles,
+  setProfileName,
 } from "../api/vault";
-import type { BrowserConfig, ImportRow } from "../types/vault";
+import type { BrowserConfig, ImportRow, ProfileInfo } from "../types/vault";
 
 interface Props {
   onBack: () => void;
@@ -121,6 +123,7 @@ function SecurityTab() {
 function BrowserTab() {
   const [cfg,     setCfg]     = useState<BrowserConfig>({ chromeIds: [], firefoxIds: [] });
   const [hostPath, setHostPath] = useState<string | null>(null);
+  const [profiles, setProfiles] = useState<ProfileInfo[]>([]);
   const [chromeInput,  setChromeInput]  = useState("");
   const [firefoxInput, setFirefoxInput] = useState("");
   const [status, setStatus] = useState<{ type: "success" | "error"; msg: string } | null>(null);
@@ -128,8 +131,8 @@ function BrowserTab() {
   const [saving,  setSaving]  = useState(false);
 
   useEffect(() => {
-    Promise.all([getBrowserIntegrations(), getNativeHostPath()])
-      .then(([c, p]) => { setCfg(c); setHostPath(p); })
+    Promise.all([getBrowserIntegrations(), getNativeHostPath(), getProfiles()])
+      .then(([c, p, profs]) => { setCfg(c); setHostPath(p); setProfiles(profs); })
       .catch(console.error)
       .finally(() => setLoading(false));
   }, []);
@@ -203,6 +206,17 @@ function BrowserTab() {
         onInputChange={setFirefoxInput}
         onAdd={() => addId("firefoxIds", firefoxInput, setFirefoxInput)}
         onRemove={id => removeId("firefoxIds", id)}
+      />
+
+      {/* Connected profiles */}
+      <ProfilesSection
+        profiles={profiles}
+        onRename={(id, name) => {
+          setProfiles(prev =>
+            prev.map(p => p.id === id ? { ...p, name: name || null } : p)
+          );
+          setProfileName(id, name || null).catch(console.error);
+        }}
       />
 
       {status && <Alert type={status.type}>{status.msg}</Alert>}
@@ -377,6 +391,109 @@ function ImportTab({ onImported }: { onImported?: () => void }) {
             {importing ? "Importing…" : `Import ${rows.length} item${rows.length !== 1 ? "s" : ""}`}
           </button>
         </>
+      )}
+    </div>
+  );
+}
+
+// ── Profiles Section ──────────────────────────────────────────────────────────
+
+function timeAgo(ms: number): string {
+  const d = Date.now() - ms;
+  if (d < 60_000)        return "just now";
+  if (d < 3_600_000)    return `${Math.floor(d / 60_000)}m ago`;
+  if (d < 86_400_000)   return `${Math.floor(d / 3_600_000)}h ago`;
+  return `${Math.floor(d / 86_400_000)}d ago`;
+}
+
+interface ProfilesSectionProps {
+  profiles: ProfileInfo[];
+  onRename: (id: string, name: string) => void;
+}
+
+function ProfilesSection({ profiles, onRename }: ProfilesSectionProps) {
+  const [editing, setEditing] = useState<string | null>(null);
+  const [draft,   setDraft]   = useState("");
+
+  function startEdit(p: ProfileInfo) {
+    setEditing(p.id);
+    setDraft(p.name ?? p.email ?? "");
+  }
+
+  function commitEdit(id: string) {
+    onRename(id, draft.trim());
+    setEditing(null);
+  }
+
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="font-medium text-sm">Connected profiles</div>
+      <div className="text-xs text-[var(--muted)]">
+        Each Chrome / Firefox profile that connects to VaultPass appears here.
+        You can give them a friendly name.
+      </div>
+
+      {profiles.length === 0 ? (
+        <div className="text-xs text-[var(--muted)] italic py-1">
+          No profiles yet — connect a browser to see them here.
+        </div>
+      ) : (
+        <div className="flex flex-col gap-2">
+          {profiles.map(p => {
+            const defaultLabel = p.email ?? "Local profile";
+            const displayName  = p.name ?? defaultLabel;
+            return (
+              <div
+                key={p.id}
+                className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-3 flex items-start gap-3"
+              >
+                <div className="flex-shrink-0 text-lg">
+                  {p.email ? "👤" : "🖥"}
+                </div>
+                <div className="flex-1 min-w-0">
+                  {editing === p.id ? (
+                    <div className="flex gap-2">
+                      <input
+                        value={draft}
+                        onChange={e => setDraft(e.target.value)}
+                        onKeyDown={e => {
+                          if (e.key === "Enter") commitEdit(p.id);
+                          if (e.key === "Escape") setEditing(null);
+                        }}
+                        autoFocus
+                        className="flex-1 bg-[var(--bg)] border border-[var(--accent)] rounded-lg px-2 py-1
+                                   text-sm text-[var(--text)] focus:outline-none"
+                      />
+                      <button
+                        onClick={() => commitEdit(p.id)}
+                        className="text-xs px-3 py-1 bg-[var(--accent)] text-white rounded-lg"
+                      >
+                        Save
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium text-[var(--text)] truncate">{displayName}</span>
+                      <button
+                        onClick={() => startEdit(p)}
+                        className="text-[var(--muted)] hover:text-[var(--accent)] text-xs flex-shrink-0 transition-colors"
+                        title="Rename"
+                      >
+                        ✏
+                      </button>
+                    </div>
+                  )}
+                  {p.email && p.name && (
+                    <div className="text-xs text-[var(--muted)] mt-0.5">{p.email}</div>
+                  )}
+                  <div className="text-xs text-[var(--muted)] mt-0.5">
+                    Last seen: {timeAgo(p.lastSeenMs)}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
       )}
     </div>
   );

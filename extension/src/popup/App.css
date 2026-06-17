@@ -89,6 +89,17 @@ header {
 
 .logo { font-weight: 600; font-size: 14px; }
 
+.profile-label {
+  flex: 1;
+  margin: 0 6px;
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: center;
+}
+
 .lock-btn {
   background: none;
   border: none;

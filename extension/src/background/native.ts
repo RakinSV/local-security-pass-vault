@@ -1,4 +1,5 @@
 import type { NativeRequest, NativeResponse } from "../shared/types";
+import { getProfileInfo } from "./profile";
 
 const HOST_NAME = "com.vaultpass.native";
 
@@ -32,10 +33,13 @@ function getPort(): chrome.runtime.Port {
   return port;
 }
 
-export function sendNative(
+export async function sendNative(
   action: NativeRequest["action"],
   payload?: unknown
 ): Promise<NativeResponse> {
+  // Attach profile context so the Tauri app can identify which Chrome profile is talking
+  const profile = await getProfileInfo();
+
   return new Promise((resolve, reject) => {
     const id = crypto.randomUUID();
     pending.set(id, { resolve, reject });
@@ -47,8 +51,16 @@ export function sendNative(
       }
     }, 10_000);
 
+    const req: NativeRequest = {
+      id,
+      action,
+      payload,
+      profileId: profile.profileId,
+      profileEmail: profile.profileEmail,
+    };
+
     try {
-      getPort().postMessage({ id, action, payload } satisfies NativeRequest);
+      getPort().postMessage(req);
     } catch (e) {
       clearTimeout(timer);
       pending.delete(id);

@@ -9,7 +9,8 @@
     "tabs",
     "nativeMessaging",
     "clipboardWrite",
-    "storage"
+    "storage",
+    "identity"
   ],
   "host_permissions": [],
 

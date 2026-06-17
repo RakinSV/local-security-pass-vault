@@ -24,13 +24,14 @@ const ICONS: Record<string, string> = {
 };
 
 export default function App() {
-  const [status, setStatus] = useState<VaultStatus | null>(null);
-  const [items, setItems] = useState<ItemSummary[]>([]);
-  const [query, setQuery] = useState("");
-  const [pageUrl, setPageUrl] = useState("");
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-  const [filling, setFilling] = useState<string | null>(null);
+  const [status,   setStatus]   = useState<VaultStatus | null>(null);
+  const [items,    setItems]    = useState<ItemSummary[]>([]);
+  const [query,    setQuery]    = useState("");
+  const [pageUrl,  setPageUrl]  = useState("");
+  const [loading,  setLoading]  = useState(true);
+  const [error,    setError]    = useState("");
+  const [filling,  setFilling]  = useState<string | null>(null);
+  const [profileLabel, setProfileLabel] = useState<string | null>(null);
 
   useEffect(() => {
     init();
@@ -38,6 +39,11 @@ export default function App() {
 
   async function init() {
     try {
+      // Get signed-in Google account email for this Chrome profile (empty = local profile)
+      chrome.identity.getProfileUserInfo({ accountStatus: "ANY" }, (info) => {
+        setProfileLabel(info.email || null);
+      });
+
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
       const url = tab?.url ?? "";
       setPageUrl(url);
@@ -151,6 +157,11 @@ export default function App() {
     <div className="app">
       <header>
         <span className="logo">🔐 VaultPass</span>
+        {profileLabel && (
+          <span className="profile-label" title={profileLabel}>
+            {profileLabel}
+          </span>
+        )}
         <button className="lock-btn" onClick={lock} title="Lock vault">
           🔒
         </button>

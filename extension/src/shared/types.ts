@@ -22,6 +22,8 @@ export interface NativeRequest {
   id: string;
   action: "status" | "search" | "get_credentials" | "lock";
   payload?: unknown;
+  profileId?: string;
+  profileEmail?: string | null;
 }
 
 export interface NativeResponse {
@@ -38,7 +40,9 @@ export type ExtensionMessage =
   | { type: "SEARCH"; query: string; pageUrl: string }
   | { type: "GET_CREDENTIALS"; itemId: string }
   | { type: "LOCK" }
-  | { type: "FILL"; username: string; password: string };
+  | { type: "FILL"; username: string; password: string }
+  | { type: "DETECT_FORM"; url: string }
+  | { type: "FILL_FROM_PROMPT"; itemId: string };
 
 export type ExtensionResponse =
   | { ok: true; data: unknown }

@@ -4,6 +4,7 @@ mod csv_import;
 mod ed25519_key;
 mod error;
 mod pipe_server;
+mod profile_registry;
 mod state;
 
 use tauri::Manager;
@@ -58,6 +59,8 @@ pub fn run() {
             commands::get_native_host_path,
             commands::parse_import_csv,
             commands::import_items_from_csv,
+            commands::get_profiles,
+            commands::set_profile_name,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
