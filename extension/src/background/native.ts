@@ -123,7 +123,7 @@ export async function sendNative(
 
     try {
       getPort().postMessage(req);
-      void timer; // timer clears itself via pending.has check on success
+      // timer auto-expires: pending.has(id) check prevents double-reject on success
     } catch (e) {
       clearTimeout(timer);
       pending.delete(id);
