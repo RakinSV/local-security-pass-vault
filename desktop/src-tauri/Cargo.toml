@@ -13,11 +13,14 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = [] }
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-uuid = { version = "1", features = ["v4"] }
-core-vault = { path = "../../core-vault" }
+tauri       = { version = "2", features = [] }
+serde       = { version = "1", features = ["derive"] }
+serde_json  = "1"
+uuid        = { version = "1", features = ["v4"] }
+hex         = "0.4"
+tokio                = { version = "1", features = ["net", "io-util", "rt-multi-thread"] }
+libsodium-sys-stable = "1"
+core-vault           = { path = "../../core-vault" }
 
 [lints.clippy]
 unwrap_used = "warn"

@@ -1,0 +1,9 @@
+{
+  "name": "com.vaultpass.native",
+  "description": "VaultPass Native Messaging Host",
+  "path": "REPLACE_WITH_ABSOLUTE_PATH_TO\\vaultpass-native-host.exe",
+  "type": "stdio",
+  "allowed_origins": [
+    "chrome-extension://REPLACE_WITH_EXTENSION_ID/"
+  ]
+}

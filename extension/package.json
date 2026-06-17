@@ -1,0 +1,25 @@
+{
+  "name": "vaultpass-extension",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "build": "vite build && vite build --config vite.content.config.ts",
+    "dev": "concurrently \"vite build --watch\" \"vite build --config vite.content.config.ts --watch\"",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "react": "^18",
+    "react-dom": "^18",
+    "tldts": "^6"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0",
+    "@types/react": "^18",
+    "@types/react-dom": "^18",
+    "@vitejs/plugin-react": "^4",
+    "concurrently": "^8",
+    "typescript": "^5",
+    "vite": "^5"
+  }
+}

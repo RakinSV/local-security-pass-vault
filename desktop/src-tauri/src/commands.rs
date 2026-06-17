@@ -192,3 +192,14 @@ pub async fn change_master_password(
     vault.change_master_password(old_password.as_bytes(), new_password.as_bytes())?;
     Ok(())
 }
+
+/// Returns the Ed25519 public key (hex) so the browser extension can verify pipe responses.
+#[tauri::command]
+pub async fn get_signing_public_key(state: State<'_, AppState>) -> Result<String, AppError> {
+    state
+        .sign_pk_hex
+        .lock()
+        .map_err(|_| AppError::LockPoisoned)?
+        .clone()
+        .ok_or(AppError::Other("signing key not ready".into()))
+}

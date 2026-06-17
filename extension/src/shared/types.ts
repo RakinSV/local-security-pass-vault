@@ -1,0 +1,45 @@
+export interface ItemSummary {
+  id: string;
+  itemType: "login" | "card" | "note" | "identity" | "ssh_key";
+  title: string;
+  url?: string;
+  username?: string;
+  favorite: boolean;
+}
+
+export interface Credentials {
+  username: string;
+  password: string;
+}
+
+export interface VaultStatus {
+  isLocked: boolean;
+  itemCount: number;
+}
+
+// Native messaging protocol (extension ↔ native host ↔ Tauri pipe)
+export interface NativeRequest {
+  id: string;
+  action: "status" | "search" | "get_credentials" | "lock";
+  payload?: unknown;
+}
+
+export interface NativeResponse {
+  id: string;
+  success: boolean;
+  data?: unknown;
+  error?: string;
+  signature?: string; // Ed25519 hex-encoded
+}
+
+// Messages between popup/content scripts ↔ background service worker
+export type ExtensionMessage =
+  | { type: "GET_STATUS" }
+  | { type: "SEARCH"; query: string; pageUrl: string }
+  | { type: "GET_CREDENTIALS"; itemId: string }
+  | { type: "LOCK" }
+  | { type: "FILL"; username: string; password: string };
+
+export type ExtensionResponse =
+  | { ok: true; data: unknown }
+  | { ok: false; error: string };

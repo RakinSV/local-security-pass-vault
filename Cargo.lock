@@ -3906,12 +3906,19 @@ name = "vaultpass-desktop"
 version = "0.1.0"
 dependencies = [
  "core-vault",
+ "hex",
+ "libsodium-sys-stable",
  "serde",
  "serde_json",
  "tauri",
  "tauri-build",
+ "tokio",
  "uuid",
 ]
+
+[[package]]
+name = "vaultpass-native-host"
+version = "0.1.0"
 
 [[package]]
 name = "vcpkg"
