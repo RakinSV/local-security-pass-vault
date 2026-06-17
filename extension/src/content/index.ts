@@ -205,7 +205,9 @@ setTimeout(detectAndPrompt, 1_500);
 // ── Fill messages from popup and background ───────────────────────────────────
 
 chrome.runtime.onMessage.addListener(
-  (msg: { type: string; username?: string; password?: string }) => {
+  (msg: { type: string; username?: string; password?: string }, sender) => {
+    // Reject messages from any source other than this extension.
+    if (sender.id !== chrome.runtime.id) return;
     if (
       msg.type === "FILL" &&
       msg.username !== undefined &&

@@ -15,6 +15,8 @@ export interface Credentials {
 export interface VaultStatus {
   isLocked: boolean;
   itemCount: number;
+  /** Desktop Ed25519 public key hex — returned on every status response for TOFU pairing. */
+  signingPublicKey?: string;
 }
 
 // Native messaging protocol (extension ↔ native host ↔ Tauri pipe)

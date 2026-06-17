@@ -106,6 +106,7 @@ impl Vault {
             created_at,
         };
         write_meta(&paths.meta, &meta)?;
+        file::restrict_permissions(&paths.meta).ok();
 
         let honeypot = HoneypotGuard::init(&paths.honeypot)?;
 

@@ -43,6 +43,14 @@ pub fn load_or_generate(dir: &Path) -> Result<(PublicKey, SecretKey), String> {
 
     fs::write(&sk_path, sk.as_ref()).map_err(|e| e.to_string())?;
     fs::write(&pk_path, pk.as_ref()).map_err(|e| e.to_string())?;
+    // Restrict to owner-only — signing keys must never be world-readable.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let perms = std::fs::Permissions::from_mode(0o600);
+        std::fs::set_permissions(&sk_path, perms.clone()).map_err(|e| e.to_string())?;
+        std::fs::set_permissions(&pk_path, perms).map_err(|e| e.to_string())?;
+    }
 
     Ok((pk, sk))
 }

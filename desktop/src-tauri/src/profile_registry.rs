@@ -38,6 +38,17 @@ fn now_ms() -> i64 {
 
 /// Upsert a profile entry. Called by the pipe server on every inbound request.
 pub fn upsert(data_dir: &Path, profile_id: &str, email: Option<&str>, browser_type: Option<&str>) {
+    // Reject malformed inputs — profile_id must be ASCII alphanumeric + hyphens/underscores.
+    if profile_id.is_empty()
+        || profile_id.len() > 128
+        || !profile_id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+    {
+        return;
+    }
+    // Cap optional fields to safe lengths.
+    let email = email.filter(|e| !e.is_empty() && e.len() <= 254);
+    let browser_type = browser_type.filter(|bt| !bt.is_empty() && bt.len() <= 16);
+
     let mut reg = load(data_dir);
     let entry = reg.entry(profile_id.to_owned()).or_insert_with(|| Profile {
         id: profile_id.to_owned(),

@@ -152,6 +152,15 @@ async fn run_unix(app: AppHandle) {
             return;
         }
     };
+    // Restrict socket to owner only — prevents other local users from connecting.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if let Err(e) = std::fs::set_permissions(SOCK_PATH, std::fs::Permissions::from_mode(0o600))
+        {
+            eprintln!("[pipe] failed to restrict socket permissions: {e}");
+        }
+    }
 
     loop {
         let Ok((mut stream, _)) = listener.accept().await else { continue };
@@ -215,9 +224,15 @@ async fn handle(app: &AppHandle, raw: &[u8]) -> PipeResponse {
                 0
             };
             drop(vault_guard);
+            // Include public key so the extension can do TOFU signature verification.
+            let pk_hex = state.sign_pk_hex.lock().unwrap().clone().unwrap_or_default();
             PipeResponse::ok(
                 &id,
-                serde_json::json!({ "isLocked": is_locked, "itemCount": item_count }),
+                serde_json::json!({
+                    "isLocked": is_locked,
+                    "itemCount": item_count,
+                    "signingPublicKey": pk_hex
+                }),
                 &sk,
             )
         }
@@ -244,7 +259,7 @@ async fn handle(app: &AppHandle, raw: &[u8]) -> PipeResponse {
 
             let all = match vault.list_items() {
                 Ok(l) => l,
-                Err(e) => return PipeResponse::err(&id, e.to_string()),
+                Err(_) => return PipeResponse::err(&id, "InternalError"),
             };
 
             let mut summaries = Vec::new();
@@ -252,26 +267,17 @@ async fn handle(app: &AppHandle, raw: &[u8]) -> PipeResponse {
                 if !query.is_empty() && !summary.title.to_lowercase().contains(&query) {
                     continue;
                 }
-                // Fetch full item to get URL for login entries
-                let url: Option<String> = if let Ok(Some(item)) = vault.get_item(&summary.id) {
-                    if let ItemPayload::Login { url, .. } = &item.payload {
-                        Some(url.clone())
-                    } else {
-                        None
-                    }
-                } else {
-                    None
-                };
-
-                let username: Option<String> = if let Ok(Some(item)) = vault.get_item(&summary.id) {
-                    if let ItemPayload::Login { username, .. } = &item.payload {
-                        Some(username.clone())
-                    } else {
-                        None
-                    }
-                } else {
-                    None
-                };
+                // Fetch full item once to extract URL and username for login entries.
+                let (url, username): (Option<String>, Option<String>) =
+                    match vault.get_item(&summary.id) {
+                        Ok(Some(item)) => match item.payload {
+                            ItemPayload::Login { url, username, .. } => {
+                                (Some(url), Some(username))
+                            }
+                            _ => (None, None),
+                        },
+                        _ => (None, None),
+                    };
 
                 summaries.push(serde_json::json!({
                     "id": summary.id.to_string(),
@@ -309,7 +315,7 @@ async fn handle(app: &AppHandle, raw: &[u8]) -> PipeResponse {
             let item = match vault.get_item(&uuid) {
                 Ok(Some(i)) => i,
                 Ok(None) => return PipeResponse::err(&id, "not found"),
-                Err(e) => return PipeResponse::err(&id, e.to_string()),
+                Err(_) => return PipeResponse::err(&id, "InternalError"),
             };
             drop(vault_guard);
 

@@ -12,6 +12,8 @@ pub fn atomic_write(target: &Path, data: &[u8]) -> Result<()> {
 
     {
         let mut file = File::create(&tmp)?;
+        // Set 0600 before writing any data so the window of world-readable tmp is zero.
+        restrict_permissions(&tmp)?;
         file.write_all(data)?;
         // fsync — данные физически на диске до rename.
         file.sync_all()?;
