@@ -16,7 +16,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - name: Install libsodium build deps
+      - name: Install build deps
         run: sudo apt-get update && sudo apt-get install -y build-essential
       - run: cargo install cargo-audit --locked
       - run: cargo audit
@@ -26,7 +26,15 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        include:
+          # Linux: only test pure-Rust crates (core-vault + native-host).
+          # vaultpass-desktop pulls Tauri's GTK stack which is unavailable
+          # on bare ubuntu-latest runners without a full desktop install.
+          - os: ubuntu-latest
+            cargo_args: -p core-vault -p vaultpass-native-host
+          # Windows: full workspace (winreg + Tauri compile without GTK).
+          - os: windows-latest
+            cargo_args: --workspace
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -34,7 +42,7 @@ jobs:
       - name: Build deps (Linux)
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y build-essential
-      - run: cargo test --workspace --all-features
+      - run: cargo test ${{ matrix.cargo_args }} --all-features
 
   clippy:
     name: clippy (-D warnings)
@@ -45,7 +53,9 @@ jobs:
         with:
           components: clippy
       - run: sudo apt-get update && sudo apt-get install -y build-essential
-      - run: cargo clippy --workspace --all-targets -- -D warnings
+      # Same rationale as test matrix: skip vaultpass-desktop on Linux
+      # to avoid GTK system dependency requirement.
+      - run: cargo clippy -p core-vault -p vaultpass-native-host --all-targets -- -D warnings
 
   typescript:
     name: TypeScript type check
