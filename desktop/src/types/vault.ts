@@ -98,4 +98,5 @@ export interface ProfileInfo {
   email: string | null;
   name: string | null;
   lastSeenMs: number;
+  browserType: string | null;
 }

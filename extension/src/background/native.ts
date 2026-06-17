@@ -57,6 +57,7 @@ export async function sendNative(
       payload,
       profileId: profile.profileId,
       profileEmail: profile.profileEmail,
+      browserType: profile.browserType,
     };
 
     try {

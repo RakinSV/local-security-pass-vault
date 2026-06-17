@@ -28,6 +28,8 @@ struct PipeRequest {
     profile_id: Option<String>,
     #[serde(default)]
     profile_email: Option<String>,
+    #[serde(default)]
+    browser_type: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -183,13 +185,14 @@ async fn handle(app: &AppHandle, raw: &[u8]) -> PipeResponse {
     };
     let id = req.id.clone();
 
-    // Register/update the Chrome profile that sent this request
+    // Register/update the browser profile that sent this request
     if let Some(ref pid) = req.profile_id {
         if let Ok(data_dir) = app.path().app_data_dir() {
             crate::profile_registry::upsert(
                 &data_dir,
                 pid,
                 req.profile_email.as_deref(),
+                req.browser_type.as_deref(),
             );
         }
     }

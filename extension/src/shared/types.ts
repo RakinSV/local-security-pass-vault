@@ -24,6 +24,7 @@ export interface NativeRequest {
   payload?: unknown;
   profileId?: string;
   profileEmail?: string | null;
+  browserType?: string;
 }
 
 export interface NativeResponse {

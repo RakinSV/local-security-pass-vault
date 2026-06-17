@@ -199,8 +199,9 @@ function BrowserTab() {
 
       {/* Firefox */}
       <IdSection
-        label="Firefox extension IDs"
-        hint='about:debugging → This Firefox → VaultPass → copy "Internal UUID".'
+        label="Firefox extension ID"
+        hint='The extension always uses a fixed ID: vaultpass@vaultpass.app — just click Add.'
+        defaultValue="vaultpass@vaultpass.app"
         ids={cfg.firefoxIds}
         input={firefoxInput}
         onInputChange={setFirefoxInput}
@@ -236,6 +237,7 @@ function BrowserTab() {
 interface IdSectionProps {
   label: string;
   hint: string;
+  defaultValue?: string;
   ids: string[];
   input: string;
   onInputChange: (v: string) => void;
@@ -243,7 +245,11 @@ interface IdSectionProps {
   onRemove: (id: string) => void;
 }
 
-function IdSection({ label, hint, ids, input, onInputChange, onAdd, onRemove }: IdSectionProps) {
+function IdSection({ label, hint, defaultValue, ids, input, onInputChange, onAdd, onRemove }: IdSectionProps) {
+  function handleFocus() {
+    if (!input && defaultValue) onInputChange(defaultValue);
+  }
+
   return (
     <div className="flex flex-col gap-2">
       <div className="font-medium text-sm">{label}</div>
@@ -253,8 +259,9 @@ function IdSection({ label, hint, ids, input, onInputChange, onAdd, onRemove }: 
           type="text"
           value={input}
           onChange={e => onInputChange(e.target.value)}
+          onFocus={handleFocus}
           onKeyDown={e => e.key === "Enter" && onAdd()}
-          placeholder="Extension ID…"
+          placeholder={defaultValue ?? "Extension ID…"}
           className="flex-1 bg-[var(--surface)] border border-[var(--border)] rounded-lg px-3 py-2
                      text-sm font-mono text-[var(--text)] placeholder-[var(--muted)]
                      focus:outline-none focus:border-[var(--accent)] transition-colors"
@@ -406,6 +413,21 @@ function timeAgo(ms: number): string {
   return `${Math.floor(d / 86_400_000)}d ago`;
 }
 
+function BrowserBadge({ type }: { type: string | null }) {
+  const map: Record<string, { label: string; color: string }> = {
+    chrome:  { label: "Chrome",  color: "bg-blue-900/40 text-blue-300 border-blue-800/50" },
+    firefox: { label: "Firefox", color: "bg-orange-900/40 text-orange-300 border-orange-800/50" },
+    edge:    { label: "Edge",    color: "bg-teal-900/40 text-teal-300 border-teal-800/50" },
+  };
+  const b = type ? (map[type] ?? { label: type, color: "bg-[var(--surface)] text-[var(--muted)] border-[var(--border)]" }) : null;
+  if (!b) return null;
+  return (
+    <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded border ${b.color} flex-shrink-0`}>
+      {b.label}
+    </span>
+  );
+}
+
 interface ProfilesSectionProps {
   profiles: ProfileInfo[];
   onRename: (id: string, name: string) => void;
@@ -474,6 +496,7 @@ function ProfilesSection({ profiles, onRename }: ProfilesSectionProps) {
                   ) : (
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-medium text-[var(--text)] truncate">{displayName}</span>
+                      <BrowserBadge type={p.browserType} />
                       <button
                         onClick={() => startEdit(p)}
                         className="text-[var(--muted)] hover:text-[var(--accent)] text-xs flex-shrink-0 transition-colors"

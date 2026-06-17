@@ -1,6 +1,18 @@
+export type BrowserType = "chrome" | "firefox" | "edge";
+
 export interface ProfileInfo {
   profileId: string;
   profileEmail: string | null;
+  browserType: BrowserType;
+}
+
+function detectBrowserType(): BrowserType {
+  // chrome.runtime.getBrowserInfo exists only in Firefox (MV3 109+)
+  if (typeof (chrome.runtime as Record<string, unknown>).getBrowserInfo === "function") {
+    return "firefox";
+  }
+  if (navigator.userAgent.includes("Edg/")) return "edge";
+  return "chrome";
 }
 
 let cached: ProfileInfo | null = null;
@@ -8,7 +20,6 @@ let cached: ProfileInfo | null = null;
 export async function getProfileInfo(): Promise<ProfileInfo> {
   if (cached) return cached;
 
-  // Per-profile UUID stored in chrome.storage.local (isolated per Chrome profile)
   const STORAGE_KEY = "vaultpass_profile_id";
   const stored = await chrome.storage.local.get(STORAGE_KEY);
 
@@ -20,7 +31,7 @@ export async function getProfileInfo(): Promise<ProfileInfo> {
     await chrome.storage.local.set({ [STORAGE_KEY]: profileId });
   }
 
-  // Try to get signed-in Google account email (empty string if not signed in)
+  // Google account email — only available in Chrome/Edge, not Firefox
   let profileEmail: string | null = null;
   try {
     const info = await new Promise<chrome.identity.ProfileUserInfo>((resolve) => {
@@ -28,10 +39,10 @@ export async function getProfileInfo(): Promise<ProfileInfo> {
     });
     profileEmail = info.email || null;
   } catch {
-    // identity API unavailable in this context
+    // identity API unavailable (Firefox, or permission not granted)
   }
 
-  cached = { profileId, profileEmail };
+  cached = { profileId, profileEmail, browserType: detectBrowserType() };
   return cached;
 }
 

@@ -8,6 +8,8 @@ pub struct Profile {
     pub email: Option<String>,
     pub name: Option<String>,
     pub last_seen_ms: i64,
+    #[serde(default)]
+    pub browser_type: Option<String>,
 }
 
 type Registry = HashMap<String, Profile>;
@@ -35,18 +37,24 @@ fn now_ms() -> i64 {
 }
 
 /// Upsert a profile entry. Called by the pipe server on every inbound request.
-pub fn upsert(data_dir: &Path, profile_id: &str, email: Option<&str>) {
+pub fn upsert(data_dir: &Path, profile_id: &str, email: Option<&str>, browser_type: Option<&str>) {
     let mut reg = load(data_dir);
     let entry = reg.entry(profile_id.to_owned()).or_insert_with(|| Profile {
         id: profile_id.to_owned(),
         email: None,
         name: None,
         last_seen_ms: 0,
+        browser_type: None,
     });
     entry.last_seen_ms = now_ms();
     if let Some(e) = email {
         if !e.is_empty() {
             entry.email = Some(e.to_owned());
+        }
+    }
+    if let Some(bt) = browser_type {
+        if !bt.is_empty() {
+            entry.browser_type = Some(bt.to_owned());
         }
     }
     save(data_dir, &reg);
