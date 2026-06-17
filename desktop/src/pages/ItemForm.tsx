@@ -1,0 +1,329 @@
+import { useState, useEffect } from "react";
+import { PasswordField } from "../components/PasswordField";
+import { createItem, updateItem, getItem } from "../api/vault";
+import type { ItemType, ItemPayload } from "../types/vault";
+
+const TYPES: { value: ItemType; label: string }[] = [
+  { value: "login", label: "🔑 Login" },
+  { value: "card", label: "💳 Card" },
+  { value: "note", label: "📄 Secure Note" },
+  { value: "identity", label: "👤 Identity" },
+  { value: "ssh_key", label: "🖥 SSH Key" },
+];
+
+function emptyPayload(type: ItemType): ItemPayload {
+  switch (type) {
+    case "login":
+      return { type: "login", url: "", username: "", password: "", totp_secret: null, notes: null, custom_fields: [], password_history: [] };
+    case "card":
+      return { type: "card", cardholder: "", number: "", expiry_month: 1, expiry_year: new Date().getFullYear(), cvv: "", notes: null };
+    case "note":
+      return { type: "note", content: "" };
+    case "identity":
+      return { type: "identity", first_name: null, last_name: null, email: null, phone: null, address: null, passport: null, notes: null };
+    case "ssh_key":
+      return { type: "ssh_key", private_key: "", public_key: null, passphrase: null, notes: null };
+  }
+}
+
+interface Props {
+  editId?: string;
+  defaultType?: ItemType;
+  onSaved: (id: string) => void;
+  onBack: () => void;
+}
+
+export function ItemForm({ editId, defaultType = "login", onSaved, onBack }: Props) {
+  const [itemType, setItemType] = useState<ItemType>(defaultType);
+  const [title, setTitle] = useState("");
+  const [payload, setPayload] = useState<ItemPayload>(emptyPayload(defaultType));
+  const [favorite, setFavorite] = useState(false);
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [loading, setLoading] = useState(!!editId);
+
+  useEffect(() => {
+    if (!editId) return;
+    setLoading(true);
+    getItem(editId)
+      .then(item => {
+        setTitle(item.title);
+        setItemType(item.itemType);
+        setPayload(item.payload);
+        setFavorite(item.favorite);
+      })
+      .catch(err => setError(String(err)))
+      .finally(() => setLoading(false));
+  }, [editId]);
+
+  function changeType(t: ItemType) {
+    setItemType(t);
+    setPayload(emptyPayload(t));
+  }
+
+  function setField(key: string, value: unknown) {
+    setPayload(prev => ({ ...prev, [key]: value } as ItemPayload));
+  }
+
+  async function handleSave(e: React.FormEvent) {
+    e.preventDefault();
+    setError("");
+    if (!title.trim()) { setError("Title is required."); return; }
+
+    setSaving(true);
+    try {
+      if (editId) {
+        await updateItem(editId, title, payload, null, favorite);
+        onSaved(editId);
+      } else {
+        const id = await createItem(title, payload, null, favorite);
+        onSaved(id);
+      }
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-screen text-[var(--muted)] text-sm">
+        Loading…
+      </div>
+    );
+  }
+
+  const p = payload;
+
+  return (
+    <div className="flex flex-col h-screen">
+      <div className="flex items-center gap-3 px-4 py-3 border-b border-[var(--border)]">
+        <button
+          onClick={onBack}
+          className="text-[var(--muted)] hover:text-[var(--text)] transition-colors text-sm"
+        >
+          ←
+        </button>
+        <div className="flex-1 font-medium">
+          {editId ? "Edit item" : "New item"}
+        </div>
+        <label className="flex items-center gap-2 text-sm text-[var(--muted)] cursor-pointer">
+          <input
+            type="checkbox"
+            checked={favorite}
+            onChange={e => setFavorite(e.target.checked)}
+            className="accent-yellow-400"
+          />
+          Favourite
+        </label>
+      </div>
+
+      <div className="flex-1 overflow-y-auto p-4 max-w-lg mx-auto w-full">
+        <form onSubmit={handleSave} className="flex flex-col gap-4">
+          {/* Type selector (only on create) */}
+          {!editId && (
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-medium text-[var(--muted)] uppercase tracking-wide">
+                Type
+              </label>
+              <div className="flex flex-wrap gap-2">
+                {TYPES.map(t => (
+                  <button
+                    key={t.value}
+                    type="button"
+                    onClick={() => changeType(t.value)}
+                    className={`px-3 py-1.5 rounded-lg text-sm transition-colors border
+                      ${itemType === t.value
+                        ? "bg-[var(--accent)]/20 border-[var(--accent)] text-[var(--accent)]"
+                        : "border-[var(--border)] text-[var(--muted)] hover:text-[var(--text)]"
+                      }`}
+                  >
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Title */}
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-medium text-[var(--muted)] uppercase tracking-wide">
+              Title *
+            </label>
+            <input
+              type="text"
+              value={title}
+              onChange={e => setTitle(e.target.value)}
+              placeholder="e.g. GitHub, Bank of America"
+              autoFocus
+              className="w-full bg-[var(--bg)] border border-[var(--border)] rounded-lg px-3 py-2
+                         text-sm text-[var(--text)] placeholder-[var(--muted)]
+                         focus:outline-none focus:border-[var(--accent)] transition-colors"
+            />
+          </div>
+
+          {/* Login fields */}
+          {p.type === "login" && (
+            <>
+              <TextField label="URL" value={p.url} onChange={v => setField("url", v)} placeholder="https://example.com" />
+              <TextField label="Username" value={p.username} onChange={v => setField("username", v)} placeholder="user@example.com" />
+              <PasswordField label="Password" value={p.password} onChange={v => setField("password", v)} placeholder="Password" />
+              <TextField label="TOTP secret (optional)" value={p.totp_secret ?? ""} onChange={v => setField("totp_secret", v || null)} placeholder="Base32 TOTP seed" />
+              <TextareaField label="Notes (optional)" value={p.notes ?? ""} onChange={v => setField("notes", v || null)} />
+            </>
+          )}
+
+          {/* Card fields */}
+          {p.type === "card" && (
+            <>
+              <TextField label="Cardholder" value={p.cardholder} onChange={v => setField("cardholder", v)} />
+              <PasswordField label="Card number" value={p.number} onChange={v => setField("number", v)} placeholder="1234 5678 9012 3456" />
+              <div className="grid grid-cols-2 gap-3">
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs font-medium text-[var(--muted)] uppercase tracking-wide">Expiry month</label>
+                  <input type="number" min={1} max={12} value={p.expiry_month}
+                    onChange={e => setField("expiry_month", parseInt(e.target.value))}
+                    className="bg-[var(--bg)] border border-[var(--border)] rounded-lg px-3 py-2 text-sm text-[var(--text)] focus:outline-none focus:border-[var(--accent)]" />
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs font-medium text-[var(--muted)] uppercase tracking-wide">Expiry year</label>
+                  <input type="number" min={2024} max={2050} value={p.expiry_year}
+                    onChange={e => setField("expiry_year", parseInt(e.target.value))}
+                    className="bg-[var(--bg)] border border-[var(--border)] rounded-lg px-3 py-2 text-sm text-[var(--text)] focus:outline-none focus:border-[var(--accent)]" />
+                </div>
+              </div>
+              <PasswordField label="CVV" value={p.cvv} onChange={v => setField("cvv", v)} placeholder="123" />
+              <TextareaField label="Notes (optional)" value={p.notes ?? ""} onChange={v => setField("notes", v || null)} />
+            </>
+          )}
+
+          {/* Note fields */}
+          {p.type === "note" && (
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-medium text-[var(--muted)] uppercase tracking-wide">Content</label>
+              <textarea
+                value={p.content}
+                onChange={e => setField("content", e.target.value)}
+                rows={10}
+                placeholder="Secure note content…"
+                className="w-full bg-[var(--bg)] border border-[var(--border)] rounded-lg px-3 py-2
+                           text-sm text-[var(--text)] placeholder-[var(--muted)] resize-none
+                           focus:outline-none focus:border-[var(--accent)] transition-colors"
+              />
+            </div>
+          )}
+
+          {/* Identity fields */}
+          {p.type === "identity" && (
+            <>
+              <div className="grid grid-cols-2 gap-3">
+                <TextField label="First name" value={p.first_name ?? ""} onChange={v => setField("first_name", v || null)} />
+                <TextField label="Last name" value={p.last_name ?? ""} onChange={v => setField("last_name", v || null)} />
+              </div>
+              <TextField label="Email" value={p.email ?? ""} onChange={v => setField("email", v || null)} placeholder="user@example.com" />
+              <TextField label="Phone" value={p.phone ?? ""} onChange={v => setField("phone", v || null)} />
+              <TextField label="Address" value={p.address ?? ""} onChange={v => setField("address", v || null)} />
+              <PasswordField label="Passport (optional)" value={p.passport ?? ""} onChange={v => setField("passport", v || null)} />
+              <TextareaField label="Notes (optional)" value={p.notes ?? ""} onChange={v => setField("notes", v || null)} />
+            </>
+          )}
+
+          {/* SSH Key fields */}
+          {p.type === "ssh_key" && (
+            <>
+              <div className="flex flex-col gap-1">
+                <label className="text-xs font-medium text-[var(--muted)] uppercase tracking-wide">Private key (PEM)</label>
+                <textarea
+                  value={p.private_key}
+                  onChange={e => setField("private_key", e.target.value)}
+                  rows={8}
+                  placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"
+                  className="w-full bg-[var(--bg)] border border-[var(--border)] rounded-lg px-3 py-2
+                             text-xs text-[var(--text)] placeholder-[var(--muted)] font-mono resize-none
+                             focus:outline-none focus:border-[var(--accent)] transition-colors"
+                />
+              </div>
+              <div className="flex flex-col gap-1">
+                <label className="text-xs font-medium text-[var(--muted)] uppercase tracking-wide">Public key (optional)</label>
+                <textarea
+                  value={p.public_key ?? ""}
+                  onChange={e => setField("public_key", e.target.value || null)}
+                  rows={3}
+                  placeholder="ssh-ed25519 AAAA…"
+                  className="w-full bg-[var(--bg)] border border-[var(--border)] rounded-lg px-3 py-2
+                             text-xs text-[var(--text)] placeholder-[var(--muted)] font-mono resize-none
+                             focus:outline-none focus:border-[var(--accent)] transition-colors"
+                />
+              </div>
+              <PasswordField label="Passphrase (optional)" value={p.passphrase ?? ""} onChange={v => setField("passphrase", v || null)} />
+              <TextareaField label="Notes (optional)" value={p.notes ?? ""} onChange={v => setField("notes", v || null)} />
+            </>
+          )}
+
+          {error && (
+            <div className="text-[var(--danger)] text-sm bg-red-950/30 border border-red-900/40 rounded-lg px-3 py-2">
+              {error}
+            </div>
+          )}
+
+          <div className="flex gap-3 pt-2">
+            <button
+              type="button"
+              onClick={onBack}
+              className="flex-1 border border-[var(--border)] text-[var(--muted)]
+                         hover:text-[var(--text)] py-2.5 rounded-xl text-sm transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={saving}
+              className="flex-1 bg-[var(--accent)] hover:bg-[var(--accent-hover)] disabled:opacity-40
+                         text-white font-medium py-2.5 rounded-xl text-sm transition-colors"
+            >
+              {saving ? "Saving…" : editId ? "Save changes" : "Add item"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function TextField({ label, value, onChange, placeholder }: {
+  label: string; value: string; onChange: (v: string) => void; placeholder?: string;
+}) {
+  return (
+    <div className="flex flex-col gap-1">
+      <label className="text-xs font-medium text-[var(--muted)] uppercase tracking-wide">{label}</label>
+      <input
+        type="text"
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        placeholder={placeholder}
+        className="w-full bg-[var(--bg)] border border-[var(--border)] rounded-lg px-3 py-2
+                   text-sm text-[var(--text)] placeholder-[var(--muted)]
+                   focus:outline-none focus:border-[var(--accent)] transition-colors"
+      />
+    </div>
+  );
+}
+
+function TextareaField({ label, value, onChange }: {
+  label: string; value: string; onChange: (v: string) => void;
+}) {
+  return (
+    <div className="flex flex-col gap-1">
+      <label className="text-xs font-medium text-[var(--muted)] uppercase tracking-wide">{label}</label>
+      <textarea
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        rows={3}
+        className="w-full bg-[var(--bg)] border border-[var(--border)] rounded-lg px-3 py-2
+                   text-sm text-[var(--text)] placeholder-[var(--muted)] resize-none
+                   focus:outline-none focus:border-[var(--accent)] transition-colors"
+      />
+    </div>
+  );
+}
