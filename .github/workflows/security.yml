@@ -1,0 +1,60 @@
+name: Security
+
+on:
+  push:
+  pull_request:
+  schedule:
+    - cron: "0 3 * * 1" # еженедельно, понедельник 03:00 UTC — fuzzing
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  audit:
+    name: cargo audit (CVE)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install libsodium build deps
+        run: sudo apt-get update && sudo apt-get install -y build-essential
+      - run: cargo install cargo-audit --locked
+      - run: cargo audit
+
+  test:
+    name: tests + crypto vectors
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build deps (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y build-essential
+      - run: cargo test --workspace --all-features
+
+  clippy:
+    name: clippy (-D warnings)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - run: sudo apt-get update && sudo apt-get install -y build-essential
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+
+  fuzz:
+    name: fuzzing (weekly)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      - run: cargo install cargo-fuzz --locked
+      - run: sudo apt-get update && sudo apt-get install -y build-essential
+      - run: cargo fuzz run fuzz_vault_open -- -max_total_time=300
+      - run: cargo fuzz run fuzz_item_deserialize -- -max_total_time=300

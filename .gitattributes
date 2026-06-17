@@ -1,0 +1,11 @@
+# Нормализация концов строк к LF — кросс-платформенный проект (Win + Linux).
+* text=auto eol=lf
+
+# Скрипты всегда LF.
+*.sh text eol=lf
+
+# Бинарные/неизменяемые форматы — не трогать.
+*.png binary
+*.cf  binary
+*.epf binary
+*.mxl binary

@@ -1,0 +1,17 @@
+[workspace]
+resolver = "2"
+members = ["core-vault"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "GPL-3.0-or-later"
+rust-version = "1.96"
+
+[profile.release]
+# Безопасность: паника = abort (нет раскрутки стека с возможной утечкой ключей)
+panic = "abort"
+# Перезапись опасных переполнений в release тоже паникует
+overflow-checks = true
+lto = true
+codegen-units = 1

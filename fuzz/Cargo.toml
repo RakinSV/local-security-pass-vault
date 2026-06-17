@@ -1,0 +1,32 @@
+[package]
+name = "core-vault-fuzz"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+# Собственный workspace — fuzz-крейт не входит в основной.
+[workspace]
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+
+[dependencies.core-vault]
+path = "../core-vault"
+features = ["fuzz"]
+
+[[bin]]
+name = "fuzz_vault_open"
+path = "fuzz_targets/fuzz_vault_open.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_item_deserialize"
+path = "fuzz_targets/fuzz_item_deserialize.rs"
+test = false
+doc = false
+bench = false

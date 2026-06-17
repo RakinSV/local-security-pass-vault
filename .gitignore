@@ -1,0 +1,25 @@
+# Rust
+/target
+**/*.rs.bk
+Cargo.lock.orig
+
+# Сборочные артефакты
+*.pdb
+
+# Node (desktop/extension — появятся позже)
+node_modules/
+dist/
+.tauri/
+
+# Локальные данные vault — НИКОГДА не коммитить
+*.db
+*.salt
+vault.meta
+.vaultpass/
+
+# IDE / OS
+.vscode/
+.idea/
+*.swp
+Thumbs.db
+.DS_Store

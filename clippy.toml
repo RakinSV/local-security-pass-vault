@@ -1,0 +1,4 @@
+# unwrap/expect запрещены в боевом коде (lint в core-vault/Cargo.toml),
+# но разрешены в тестах — там это идиоматично.
+allow-unwrap-in-tests = true
+allow-expect-in-tests = true
