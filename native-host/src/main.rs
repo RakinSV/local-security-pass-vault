@@ -83,15 +83,24 @@ fn open_pipe() -> io::Result<std::fs::File> {
 
 #[cfg(not(windows))]
 fn open_pipe() -> io::Result<std::fs::File> {
+    use std::os::unix::io::{FromRawFd, IntoRawFd};
     use std::os::unix::net::UnixStream;
+    let mut last_err = io::Error::new(io::ErrorKind::ConnectionRefused, "socket not ready");
     for _ in 0..8 {
         match UnixStream::connect(PIPE_PATH) {
-            Ok(s) => return Ok(s.into()),
-            Err(_) => std::thread::sleep(std::time::Duration::from_millis(500)),
+            Ok(s) => {
+                // Convert UnixStream → File via raw fd (same kernel fd, different Rust wrapper)
+                // Safety: into_raw_fd() transfers ownership; fd remains valid.
+                return Ok(unsafe { std::fs::File::from_raw_fd(s.into_raw_fd()) });
+            }
+            Err(e) => {
+                last_err = e;
+                std::thread::sleep(std::time::Duration::from_millis(500));
+            }
         }
     }
     Err(io::Error::new(
         io::ErrorKind::ConnectionRefused,
-        format!("Cannot connect to {PIPE_PATH} — is VaultPass desktop running?"),
+        format!("Cannot connect to {PIPE_PATH}: {last_err} — is VaultPass desktop running?"),
     ))
 }
