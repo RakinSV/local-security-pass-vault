@@ -37,9 +37,11 @@ jobs:
       # ── System deps ──────────────────────────────────────────────────────────
       - name: System deps (Linux)
         if: runner.os == 'Linux'
+        env:
+          DEBIAN_FRONTEND: noninteractive
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
+          sudo apt-get update -y
+          sudo apt-get install -y --no-install-recommends \
             build-essential \
             libssl-dev \
             libwebkit2gtk-4.1-dev \
