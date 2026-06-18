@@ -12,6 +12,7 @@ pub mod vault;
 
 pub use error::{Result, VaultError};
 pub use vault::Vault;
+pub use vault::backup;
 
 /// Инициализация libsodium. Должна быть вызвана один раз при старте приложения,
 /// ДО любых крипто-операций. Идемпотентна и потокобезопасна.

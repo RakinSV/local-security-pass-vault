@@ -309,3 +309,47 @@ pub async fn import_items_from_csv(
     }
     Ok(count)
 }
+
+// ── Backup ─────────────────────────────────────────────────────────────────────
+
+/// Generates a 17-word BIP-39 seed phrase for backup encryption.
+#[tauri::command]
+pub async fn generate_seed_phrase() -> Result<String, AppError> {
+    Ok(core_vault::Vault::generate_backup_phrase()?)
+}
+
+/// Returns true if all words in the phrase are in the BIP-39 wordlist.
+#[tauri::command]
+pub async fn validate_seed_phrase(phrase: String) -> bool {
+    core_vault::backup::validate_phrase(&phrase)
+}
+
+/// Exports the vault to an encrypted `.vpbak` file at `backup_path`.
+/// The vault must be unlocked.
+#[tauri::command]
+pub async fn export_backup(
+    state: State<'_, AppState>,
+    backup_path: String,
+    seed_phrase: String,
+) -> Result<(), AppError> {
+    let guard = state.vault.lock().map_err(|_| AppError::LockPoisoned)?;
+    let vault = guard.as_ref().ok_or(AppError::VaultLocked)?;
+    vault.export_backup(std::path::Path::new(&backup_path), &seed_phrase)?;
+    Ok(())
+}
+
+/// Restores a vault from a `.vpbak` backup file into `dest_dir`.
+/// The current vault does not need to be unlocked.
+#[tauri::command]
+pub async fn restore_backup(
+    backup_path: String,
+    dest_dir: String,
+    seed_phrase: String,
+) -> Result<(), AppError> {
+    core_vault::Vault::restore_from_backup(
+        std::path::Path::new(&backup_path),
+        std::path::Path::new(&dest_dir),
+        &seed_phrase,
+    )?;
+    Ok(())
+}

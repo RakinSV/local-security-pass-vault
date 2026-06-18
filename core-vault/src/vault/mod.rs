@@ -3,6 +3,7 @@
 
 mod file;
 mod honeypot;
+pub mod backup;
 
 use crate::crypto::{self, MasterKeys};
 use crate::db::{Db, FolderRow, ItemRow, VaultRow};
@@ -343,6 +344,26 @@ impl Vault {
         self.keys = new_keys;
         // Контейнер перешифруется новым db_key при save().
         self.save()
+    }
+
+    // ── Бекап с seed-фразой ────────────────────────────────────────────────────
+
+    /// Генерирует seed-фразу из 17 случайных слов BIP-39.
+    pub fn generate_backup_phrase() -> Result<String> {
+        backup::generate_phrase(17)
+    }
+
+    /// Экспортирует vault в зашифрованный `.vpbak` файл.
+    /// `dest` — путь к создаваемому файлу бекапа.
+    /// `phrase` — seed-фраза (например, из `generate_backup_phrase()`).
+    pub fn export_backup(&self, dest: &std::path::Path, phrase: &str) -> Result<()> {
+        backup::export(&self.paths.dir, dest, phrase)
+    }
+
+    /// Восстанавливает vault из `.vpbak` файла в `dest_dir`.
+    /// Неверная фраза → `DecryptionFailed`.
+    pub fn restore_from_backup(src: &std::path::Path, dest_dir: &std::path::Path, phrase: &str) -> Result<()> {
+        backup::restore(src, dest_dir, phrase)
     }
 
     // ── Конвертация Item ↔ ItemRow ─────────────────────────────────────────────

@@ -22,7 +22,7 @@ jobs:
             target: x86_64-pc-windows-msvc
             label: windows-x64
 
-          - os: ubuntu-22.04
+          - os: ubuntu-24.04
             target: x86_64-unknown-linux-gnu
             label: linux-x64
 
@@ -68,12 +68,11 @@ jobs:
         working-directory: desktop
         run: npm run tauri -- build --target ${{ matrix.target }} --bundles nsis
 
-      # Linux: binary only (no DEB/AppImage — PNG icons not yet in repo).
-      # The binary requires: libwebkit2gtk-4.1, libgtk-3-0 on the target system.
-      - name: Build desktop (Linux binary)
+      # Linux: AppImage (self-contained, runs on all distros incl. Kali/Debian).
+      - name: Build desktop (Linux — AppImage)
         if: runner.os == 'Linux'
         working-directory: desktop
-        run: npm run tauri -- build --target ${{ matrix.target }}
+        run: npm run tauri -- build --target ${{ matrix.target }} --bundles appimage
 
       # ── Artifacts ────────────────────────────────────────────────────────────
       - name: Upload Windows installer
@@ -81,15 +80,15 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: vaultpass-desktop-${{ matrix.label }}
-          path: target/${{ matrix.target }}/release/bundle/
+          path: target/${{ matrix.target }}/release/bundle/nsis/*.exe
           retention-days: 30
 
-      - name: Upload Linux binary
+      - name: Upload Linux AppImage
         if: runner.os == 'Linux'
         uses: actions/upload-artifact@v4
         with:
           name: vaultpass-desktop-${{ matrix.label }}
-          path: target/${{ matrix.target }}/release/vaultpass-desktop
+          path: target/${{ matrix.target }}/release/bundle/appimage/*.AppImage
           retention-days: 30
 
   # ── Native messaging host ─────────────────────────────────────────────────
@@ -104,7 +103,7 @@ jobs:
             label: windows-x64
             bin: vaultpass-native-host.exe
 
-          - os: ubuntu-22.04
+          - os: ubuntu-24.04
             target: x86_64-unknown-linux-gnu
             label: linux-x64
             bin: vaultpass-native-host
