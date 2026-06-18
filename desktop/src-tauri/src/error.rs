@@ -1,8 +1,6 @@
-use serde::Serialize;
-
 /// All errors returned to the frontend via Tauri commands.
-/// Using String as error type so Tauri serialises it cleanly.
-#[derive(Debug, Serialize)]
+/// Serialised as a plain string (Display) so the frontend receives a string, not an object.
+#[derive(Debug)]
 pub enum AppError {
     VaultLocked,
     NotFound,
@@ -42,5 +40,13 @@ impl From<serde_json::Error> for AppError {
 impl From<uuid::Error> for AppError {
     fn from(_: uuid::Error) -> Self {
         AppError::InvalidId
+    }
+}
+
+// Tauri requires Serialize on command errors. Serialise as a plain string so the
+// frontend receives "vault already exists" instead of {"Vault":"vault already exists"}.
+impl serde::Serialize for AppError {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(&self.to_string())
     }
 }
