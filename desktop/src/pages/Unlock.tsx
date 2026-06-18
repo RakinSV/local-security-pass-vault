@@ -21,13 +21,13 @@ export function Unlock({ onUnlocked, onBack }: Props) {
       await openVault(dir, password);
       onUnlocked();
     } catch (err) {
-      const msg = String(err);
-      if (msg.includes("DecryptionFailed") || msg.includes("decryption")) {
+      const msg = String(err).toLowerCase();
+      if (msg.includes("decryption")) {
         setError("Wrong password.");
-      } else if (msg.includes("NotFound") || msg.includes("not found")) {
+      } else if (msg.includes("not found")) {
         setError("Vault not found. Create a new vault first.");
       } else {
-        setError(msg);
+        setError(String(err));
       }
     } finally {
       setLoading(false);

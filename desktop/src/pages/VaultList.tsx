@@ -25,12 +25,14 @@ export function VaultList({ onSelectItem, onAddItem, onLocked, onSettings, refre
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<ItemType | "all">("all");
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
 
   useEffect(() => {
     setLoading(true);
+    setLoadError("");
     listItems()
       .then(setItems)
-      .catch(console.error)
+      .catch(err => setLoadError(String(err)))
       .finally(() => setLoading(false));
   }, [refreshKey]);
 
@@ -115,7 +117,11 @@ export function VaultList({ onSelectItem, onAddItem, onLocked, onSettings, refre
 
         {/* Item list */}
         <div className="flex-1 overflow-y-auto p-2">
-          {loading ? (
+          {loadError ? (
+            <div className="m-2 text-[var(--danger)] text-sm bg-red-950/30 border border-red-900/40 rounded-lg px-3 py-2">
+              {loadError}
+            </div>
+          ) : loading ? (
             <div className="flex items-center justify-center h-32 text-[var(--muted)] text-sm">
               Loading…
             </div>

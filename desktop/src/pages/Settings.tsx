@@ -87,10 +87,10 @@ function SecurityTab() {
       setSuccess(true);
       setOldPw(""); setNewPw(""); setConfirmPw("");
     } catch (err) {
-      const msg = String(err);
-      setError(msg.includes("DecryptionFailed") || msg.includes("decryption")
+      const msg = String(err).toLowerCase();
+      setError(msg.includes("decryption")
         ? "Current password is incorrect."
-        : msg);
+        : String(err));
     } finally {
       setLoading(false);
     }

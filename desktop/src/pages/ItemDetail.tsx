@@ -10,19 +10,25 @@ interface Props {
   onDeleted: () => void;
 }
 
+const CLIPBOARD_TTL_MS = 30_000;
+
 function CopyBtn({ value }: { value: string }) {
   const [copied, setCopied] = useState(false);
   async function copy() {
     await navigator.clipboard.writeText(value);
     setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
+    // Clear clipboard after 30 seconds (security.md).
+    setTimeout(() => {
+      navigator.clipboard.writeText("").catch(() => {});
+      setCopied(false);
+    }, CLIPBOARD_TTL_MS);
   }
   return (
     <button
       onClick={copy}
       className="text-xs text-[var(--muted)] hover:text-[var(--accent)] transition-colors ml-1"
     >
-      {copied ? "✓" : "copy"}
+      {copied ? "✓ 30s" : "copy"}
     </button>
   );
 }

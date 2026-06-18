@@ -73,3 +73,17 @@ export const getProfiles = () =>
 
 export const setProfileName = (profileId: string, name: string | null) =>
   invoke<void>("set_profile_name", { profileId, name });
+
+// ── Backup ────────────────────────────────────────────────────────────────────
+
+export const generateSeedPhrase = () =>
+  invoke<string>("generate_seed_phrase");
+
+export const validateSeedPhrase = (phrase: string) =>
+  invoke<boolean>("validate_seed_phrase", { phrase });
+
+export const exportBackup = (backupPath: string, seedPhrase: string) =>
+  invoke<void>("export_backup", { backupPath, seedPhrase });
+
+export const restoreBackup = (backupPath: string, destDir: string, seedPhrase: string) =>
+  invoke<void>("restore_backup", { backupPath, destDir, seedPhrase });
