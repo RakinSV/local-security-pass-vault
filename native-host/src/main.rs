@@ -5,6 +5,10 @@
 //!
 //! Protocol both directions: [u32 LE length][JSON bytes]
 
+// Hide the console window on Windows — native messaging hosts must not create
+// a visible console when launched by Chrome/Firefox.
+#![cfg_attr(windows, windows_subsystem = "windows")]
+
 use std::io::{self, Read, Write};
 
 #[cfg(windows)]
