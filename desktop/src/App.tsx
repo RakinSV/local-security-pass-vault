@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { listen } from "@tauri-apps/api/event";
 import { vaultStatus } from "./api/vault";
 import { VaultPicker } from "./pages/VaultPicker";
 import { Setup } from "./pages/Setup";
@@ -37,6 +38,14 @@ export default function App() {
         setPage({ name: "picker" });
       }
     })();
+  }, []);
+
+  // Tray "Lock & Hide" locks the vault from Rust and emits this event
+  useEffect(() => {
+    const unlisten = listen("vault-locked", () => {
+      setPage({ name: "picker" });
+    });
+    return () => { unlisten.then(f => f()); };
   }, []);
 
   function refresh() {
@@ -127,6 +136,7 @@ export default function App() {
       <Settings
         onBack={() => setPage({ name: "vault" })}
         onImported={refresh}
+        onVaultLocked={() => setPage({ name: "picker" })}
       />
     );
   }

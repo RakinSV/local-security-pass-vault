@@ -1,241 +1,249 @@
-<div align="center">
+# Local Security Pass Vault (LSPV)
 
-# 🔐 VaultPass
+> **An open source, offline password manager that never phones home.**
+> Your vault lives on your disk, encrypted with battle-tested algorithms, audited libraries, and 8 layers of protection.
 
-**Local-first password manager. Zero cloud. Zero telemetry. Zero trust required.**
-
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Build](https://github.com/Dex-vabster/local-security-pass-vault/actions/workflows/security.yml/badge.svg)](https://github.com/Dex-vabster/local-security-pass-vault/actions)
-[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-lightgrey)](#installation)
-[![Rust](https://img.shields.io/badge/crypto-libsodium%20%2B%20Argon2id-orange)](core-vault/)
-[![MV3](https://img.shields.io/badge/extension-MV3%20%E2%80%94%20Chrome%20%7C%20Firefox%20%7C%20Edge-4285F4)](#browser-extension-setup)
-[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen)](CONTRIBUTING.md)
-
-[Features](#-features) · [Security Model](#-security-model) · [Install](#-installation) · [Build from Source](#-build-from-source) · [Browser Extension](#-browser-extension-setup) · [Contributing](#-contributing)
-
-</div>
+[![Build](https://img.shields.io/github/actions/workflow/status/RakinSV/local-security-pass-vault/ci.yml?branch=main&label=build)](https://github.com/RakinSV/local-security-pass-vault/actions)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Release](https://img.shields.io/github/v/release/RakinSV/local-security-pass-vault?include_prereleases&label=release)](https://github.com/RakinSV/local-security-pass-vault/releases)
+[![Crypto: Argon2id + XChaCha20](https://img.shields.io/badge/crypto-Argon2id%20%2B%20XChaCha20--Poly1305-brightgreen)](docs/adr/)
+[![Platform: Windows Linux](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-lightgrey)](https://github.com/RakinSV/local-security-pass-vault/releases)
 
 ---
 
-VaultPass is a **fully offline** password manager that stores everything on your machine and nowhere else. It is built on a Rust cryptographic core using the audited [libsodium](https://libsodium.org) library, exposed through a [Tauri 2](https://tauri.app) desktop application (~8 MB binary), and bridged to a Manifest V3 browser extension for **Chrome, Firefox, and Edge**.
+## Why another password manager?
 
-> 🚧 **Public beta** — the core is solid and tested, but the UI and packaging are still maturing. Your feedback and bug reports are the fuel. See [Contributing](#-contributing).
+Cloud password managers have breached millions of accounts. LastPass leaked encrypted vaults in 2022. No subscription service can guarantee your passwords stay private — the moment data hits their server, you lose control.
 
----
-
-## ✨ Features
-
-| Category | What you get |
-|---|---|
-| **Vault items** | Login · Credit card · Secure note · Identity · SSH key |
-| **Encryption** | XChaCha20-Poly1305 AEAD per item · SQLCipher (AES-256) file layer |
-| **KDF** | Argon2id · 256 MB RAM · 4 iterations (libsodium OPSLIMIT/MEMLIMIT_SENSITIVE) |
-| **Browser** | MV3 extension for Chrome, Firefox 109+, Edge · auto-fill shadow-DOM prompt |
-| **Profiles** | Identifies each Chrome/Firefox profile separately · shows Google account email |
-| **Import** | One-click CSV import from Chrome and Firefox password managers |
-| **IPC security** | Ed25519-signed responses over named pipe / Unix socket |
-| **No network** | Zero outbound requests — extension makes no `fetch()` calls |
-| **Platforms** | Windows 10+ and Linux (x64) |
+LSPV takes a different approach: **the vault never leaves your machine.** No cloud sync, no telemetry, no analytics, no update pings. Zero outbound network traffic from the desktop app. Passwords are encrypted before they touch the database, and the keys exist only in RAM while the vault is unlocked.
 
 ---
 
-## 🔒 Security Model
+## Security Architecture
 
 ```
-Master Password
-      │
-      ▼ Argon2id KDF — 256 MB RAM, 4 iterations
-      │
-      ├─► db_key        (32 B) → opens SQLCipher database
-      ├─► encryption_key (32 B) → decrypts Vault Key
-      └─► search_key    (32 B) → HMAC-SHA256 search index
-
-Vault Key (32 B, random at creation)
-      │
-      ▼ XChaCha20-Poly1305 — unique 192-bit nonce per save
-      │
-      └─► every vault item (stored in SQLCipher)
+╔══════════════════════════════════════════════════════════════════════════╗
+║  🔐  LSPV — 8 layers of protection between your data and an attacker    ║
+╠═══╦══════════════════════════════╦═══════════════════════════════════════╣
+║ 1 ║  Master Password KDF         ║  Argon2id · 256 MB RAM · 4 iterations║
+║ 2 ║  Vault Key Encryption        ║  XChaCha20-Poly1305 · unique nonce    ║
+║ 3 ║  Database Encryption         ║  SQLCipher · AES-256 · per-page       ║
+║ 4 ║  OS Keychain (quick unlock)  ║  DPAPI / macOS Keychain / libsecret   ║
+║ 5 ║  Memory Safety               ║  mlock() · zeroize on drop            ║
+║ 6 ║  Encrypted Backups           ║  BIP-39 · BLAKE3 checksum · XChaCha20 ║
+║ 7 ║  Browser IPC Trust           ║  Ed25519 TOFU signatures              ║
+║ 8 ║  Ransomware Detection        ║  Honeypot file + hash verification     ║
+╚═══╩══════════════════════════════╩═══════════════════════════════════════╝
 ```
 
-Key security decisions:
+**Envelope encryption:** your master password runs through Argon2id (256 MB RAM, 4 iterations — deliberately slow) to produce a key that decrypts the Vault Key. The Vault Key decrypts individual records. Changing your master password re-encrypts only the Vault Key; all records stay untouched.
 
-- **Envelope encryption** — changing your master password re-wraps only the Vault Key; no item re-encryption needed.
-- **Memory hardening** — `mlock()` + `sodium_memzero()` on all key material; keys zeroed on vault lock.
-- **Atomic writes** — all saves go through `tmp → fsync → rename`; corrupted writes are impossible.
-- **Symlink guard** — vault file is opened with `O_NOFOLLOW`; symlink detected → immediate error.
-- **Honeypot** — a sentinel file next to the vault detects ransomware modification at unlock.
-- **No clipboard history** — clipboard auto-clears after 30 s; flagged with `CF_EXCLUDEFROMCLOUDCLIPBOARD` on Windows.
-- **IPC authentication** — each native messaging response is Ed25519-signed by the desktop; the extension can verify.
-- **eTLD+1 domain matching** — auto-fill uses [tldts](https://www.npmjs.com/package/tldts) to prevent subdomain injection attacks.
-
-Full threat model: [`docs/threat-model.md`](docs/threat-model.md)
+**Atomic writes:** vault saves go through temp file → `fsync` → atomic rename. A crash mid-write leaves the previous vault intact.
 
 ---
 
-## 📥 Installation
+## Features
 
-### Windows (pre-built)
-
-> Pre-built installers will be available in [Releases](https://github.com/Dex-vabster/local-security-pass-vault/releases) once v1.0 ships. Until then, please [build from source](#-build-from-source) — it takes about 5 minutes.
-
-### Linux (pre-built)
-
-Same as above — follow [build from source](#-build-from-source).
+- **Zero cloud, zero telemetry** — no network socket ever opens from the desktop app
+- **Offline-first** — works without internet, always
+- **Multi-vault** — separate encrypted databases for work, personal, family
+- **Browser extension** — auto-fill for Chrome, Edge, and Firefox via native messaging
+- **Auto-fill** — domain-matched suggestions using eTLD+1 comparison (no subdomain confusion)
+- **5 item types** — Login, Card, Note, Identity, SSH Key
+- **CSV import** — from Chrome and Firefox password exports
+- **BIP-39 backup** — 24-word mnemonic encrypts a portable `.vbk` backup file
+- **OS Keychain** — quick unlock using DPAPI / Keychain / libsecret after first password entry
+- **System tray** — close to tray, Lock & Hide, left-click to toggle window
+- **Autostart** — optional launch at system login
+- **Ed25519 IPC signing** — browser extension verifies every native message (TOFU model)
+- **Memory protection** — keys are `mlock()`-ed and zeroed before deallocation
 
 ---
 
-## 🛠 Build from Source
+## LSPV vs Cloud Password Managers
 
-### Prerequisites
+| Feature | **LSPV** | Bitwarden | 1Password | LastPass |
+|---------|:--------:|:---------:|:---------:|:--------:|
+| Zero cloud storage | ✅ | ❌ | ❌ | ❌ |
+| Zero telemetry | ✅ | ❌ | ❌ | ❌ |
+| Works offline | ✅ | Limited | ❌ | ❌ |
+| Free forever | ✅ | Free tier | $3/mo | $3/mo |
+| Fully open source | ✅ | Partial | ❌ | ❌ |
+| No account required | ✅ | ❌ | ❌ | ❌ |
+| Argon2id KDF | ✅ | ✅ | ❌ | ❌ |
+| Self-hosted option | ✅ | Yes (complex) | ❌ | ❌ |
+| Team sharing | ❌ | ✅ | ✅ | ✅ |
+| Mobile app | ❌ (roadmap) | ✅ | ✅ | ✅ |
 
-| Tool | Version | Notes |
-|---|---|---|
-| Rust | stable (MSVC on Windows) | `rustup show` |
-| Node.js | 18+ | for the extension build |
-| Visual Studio 2022 | C++ workload | Windows only |
+---
+
+## Quick Start
+
+### Windows
+
+1. Download `lspv-setup-x64.exe` from [Releases](https://github.com/RakinSV/local-security-pass-vault/releases)
+2. Run the installer — no admin rights required (per-user install)
+3. Launch **Local Security Pass Vault** from the Start menu
+4. Create your first vault and set a strong master password
+
+### Linux
 
 ```bash
-git clone https://github.com/Dex-vabster/local-security-pass-vault.git
-cd local-security-pass-vault
-```
-
-#### 1 — Build the crypto core + desktop app
-
-```bash
-# Windows (must be inside a VS Developer shell):
-cargo build --release -p vaultpass-desktop
-
-# Linux:
-cargo build --release -p vaultpass-desktop
-```
-
-#### 2 — Build the native messaging host
-
-```bash
-cargo build --release -p vaultpass-native-host
-```
-
-#### 3 — Build the browser extension
-
-```bash
-cd extension
-npm install
-npm run build          # output → extension/dist/
-```
-
-#### 4 — Run the desktop app (dev mode)
-
-```bash
-cd desktop
-npm install
-npm run tauri dev
+# AppImage — no install required
+chmod +x lspv-x86_64.AppImage
+./lspv-x86_64.AppImage
 ```
 
 ---
 
-## 🌐 Browser Extension Setup
+## Browser Extension
 
-> The extension uses **Native Messaging** to talk to the desktop app. The desktop app registers the native host in the OS — no manual registry editing needed.
+LSPV communicates with Chrome/Firefox via the [Native Messaging API](https://developer.chrome.com/docs/apps/nativeMessaging/) — no WebSocket, no cloud relay, just a local named pipe.
 
 ### Chrome / Edge
 
-1. Open `chrome://extensions` (or `edge://extensions`)
-2. Enable **Developer mode**
-3. Click **Load unpacked** → select the `extension/dist/` folder
-4. Copy the **Extension ID** shown under VaultPass
-5. Open VaultPass desktop → **Settings → Browser** → paste the ID → **Apply & Register**
+1. In LSPV: **Settings → Browser → Chrome / Edge** — paste your extension ID from `chrome://extensions`
+2. Click **Apply & Register** — writes the native messaging manifest to the registry
+3. Load the extension: `chrome://extensions` → Developer mode → **Load unpacked** → `extension/dist/`
+4. Pin the LSPV icon to your toolbar
 
 ### Firefox
 
-1. Open `about:debugging` → **This Firefox**
-2. Click **Load Temporary Add-on** → select `extension/dist/manifest.json`
-3. In VaultPass desktop → **Settings → Browser** → Firefox section → click the input field (auto-fills `vaultpass@vaultpass.app`) → **Add** → **Apply & Register**
+1. In LSPV: **Settings → Browser → Firefox** → click **Add** (ID prefills as `lspv@lspv.app`)
+2. Click **Apply & Register**
+3. `about:debugging` → This Firefox → **Load Temporary Add-on** → `extension/dist/manifest.json`
 
-> **Firefox note:** temporary add-ons are removed on restart. For permanent install, use Firefox Developer Edition which allows unsigned extensions, or package as a signed `.xpi`.
+### How auto-fill works
 
-### Auto-fill in action
-
-Once connected, open any login page — a shadow-DOM card appears top-right with matching credentials. Click **Fill** to autofill without opening the popup. The card auto-dismisses after 20 seconds.
-
----
-
-## 🗂 Project Structure
-
-```
-vaultpass/
-  core-vault/       Rust crate — crypto, DB, vault lifecycle (37 tests)
-  desktop/          Tauri 2 app (UI + IPC server + commands)
-    src/            React + Tailwind frontend
-    src-tauri/      Rust backend
-  extension/        MV3 browser extension (TypeScript + Vite)
-    src/background/ Service worker, native messaging, profile detection
-    src/content/    Shadow-DOM auto-fill prompt
-    src/popup/      React popup UI
-  native-host/      Rust binary — bridges browser ↔ Tauri named pipe
-  docs/
-    adr/            Architecture Decision Records
-    threat-model.md Full threat model
-  fuzz/             Cargo-fuzz targets (vault_open, item_deserialize)
-  scripts/          Build and release helpers
-```
+- Popup shows items whose eTLD+1 domain matches the current tab
+- **Fill** injects credentials via native setter (not tracked by browser history)
+- Content script detects login forms and shows an inline prompt when LSPV has a matching entry
+- Every IPC response is Ed25519-signed; the extension verifies before acting on it
 
 ---
 
-## 🧪 Running Tests
+## Multi-Vault
+
+LSPV supports multiple independent encrypted databases. Each vault has its own master password, Vault Key, BIP-39 mnemonic, and OS Keychain entry.
+
+Create vaults via **+ New Vault** on the vault picker. Switch by locking the current vault and opening another. Vaults can live on a local drive, external disk, or network share — any path that your OS can open as a file.
+
+---
+
+## Backup & Recovery
+
+LSPV uses a 24-word BIP-39 mnemonic as the backup encryption key. The mnemonic is shown **once** at vault creation — write it on paper and store it somewhere safe. LSPV never saves it to disk.
+
+The `.vbk` backup format:
+- Key derivation: Argon2id with 4 GB RAM, 10 iterations (extremely slow — brute force infeasible)
+- Encryption: XChaCha20-Poly1305
+- Integrity: BLAKE3 checksum inside the ciphertext
+
+---
+
+## Build from Source
+
+### Prerequisites
+
+- [Rust 1.78+](https://rustup.rs/) + [Node.js 20+](https://nodejs.org/)
+- **Windows:** Microsoft C++ Build Tools + vcpkg for libsodium
+- **Linux:** `apt install libsodium-dev libgtk-3-dev libwebkit2gtk-4.1-dev libappindicator3-dev`
+
+### Build
 
 ```bash
-# All unit + integration tests (includes crypto test vectors)
-cargo test
-
-# Security audit (CVE check)
-cargo audit
-
-# TypeScript type check
-cd extension && npx tsc --noEmit
-cd ../desktop && npx tsc --noEmit
-
-# Fuzz (requires nightly + Linux)
-cargo +nightly fuzz run fuzz_vault_open -- -max_total_time=60
-```
-
----
-
-## 🤝 Contributing
-
-All contributions are welcome — bug reports, code, docs, design, security review.
-
-**Quick start:**
-
-```bash
-git clone https://github.com/Dex-vabster/local-security-pass-vault.git
+git clone https://github.com/RakinSV/local-security-pass-vault.git
 cd local-security-pass-vault
-cargo test           # make sure tests pass
+
+# Core library + tests
+cargo build && cargo test
+
+# Desktop app
+cd desktop && npm install && npm run tauri build
+
+# Browser extension
+cd ../extension && npm install && npm run build
 ```
 
-Please read [CONTRIBUTING.md](CONTRIBUTING.md) for the full guide, especially the **security review checklist** if you touch crypto code.
+### Development
 
-Good first issues are tagged [`good first issue`](https://github.com/Dex-vabster/local-security-pass-vault/labels/good%20first%20issue).
+```bash
+cd desktop && npm run tauri dev
+```
+
+### Security audit
+
+```bash
+cargo audit      # CVE scan
+cargo clippy     # unwrap_used / expect_used are flagged as warnings
+```
 
 ---
 
-## 🔏 Security Disclosures
+## Project Structure
 
-**Please do not open a public issue for security vulnerabilities.**
-
-Report them privately via GitHub's [Security Advisories](https://github.com/Dex-vabster/local-security-pass-vault/security/advisories/new) or email `s79504688425@gmail.com` with subject `[VaultPass Security]`.
-
-See [SECURITY.md](SECURITY.md) for the full disclosure policy and response SLA.
+```
+local-security-pass-vault/
+├── core-vault/          # Rust crate — crypto engine, data model, SQLCipher
+│   └── src/
+│       ├── crypto/      # Argon2id KDF, XChaCha20-Poly1305, HMAC search index
+│       ├── backup/      # BIP-39 + BLAKE3 backup (.vbk format)
+│       └── models.rs    # Item types, vault schema
+├── desktop/             # Tauri 2 desktop app (Windows + Linux)
+│   ├── src/             # React + Tailwind frontend
+│   └── src-tauri/       # Rust — IPC commands, OS Keychain, tray, browser integration
+├── extension/           # Browser extension (Chrome + Firefox, Manifest V3)
+│   ├── src/
+│   │   ├── background/  # Native messaging bridge + Ed25519 signature verification
+│   │   ├── content/     # Auto-fill content script
+│   │   └── popup/       # React popup
+│   └── public/          # manifest.json, icons
+├── docs/
+│   ├── adr/             # Architecture Decision Records
+│   └── threat-model.md  # Threat model
+└── CLAUDE.md            # AI assistant context (development rules + constraints)
+```
 
 ---
 
-## 📄 License
+## Architecture Decisions
+
+Key design choices are in [`docs/adr/`](docs/adr/):
+
+- **ADR-001** — Why libsodium over ring / RustCrypto
+- **ADR-002** — Envelope encryption and Vault Key design
+- **ADR-003** — BIP-39 backup format with BLAKE3 integrity
+- **ADR-004** — Named pipe IPC over localhost HTTP
+
+---
+
+## Contributing
+
+PRs welcome. A few hard rules:
+
+1. **Crypto code** — read `.claude/rules/crypto.md` before touching `core-vault/src/crypto/`. These rules exist because past violations are what cause breaches in other managers.
+2. **No new crypto deps** — libsodium only. No openssl, ring, or argon2 crates without a security review.
+3. **Tests** — any crypto change requires official test vectors (RFC 9106 for Argon2id, libsodium suite for XChaCha20).
+4. **No telemetry** — any PR that adds outbound network calls will be closed.
+5. Run `cargo audit` before opening a PR.
+
+---
+
+## Roadmap
+
+- [ ] Backup export/import UI in Settings
+- [ ] Auto-lock timer (configurable idle timeout)
+- [ ] TOTP generator (in-app 2FA codes from stored secrets)
+- [ ] Password health report (duplicates, weak, breached — local check only)
+- [ ] LAN sync between devices (no cloud involved)
+- [ ] Mobile companion app
+
+---
+
+## License
 
 MIT — see [LICENSE](LICENSE).
 
 ---
 
-<div align="center">
-
-If VaultPass is useful to you, please ⭐ the repo — it helps others find it.
-
-</div>
+*Keywords: local password manager · offline password manager · open source password manager · zero knowledge password manager · Rust password manager · self-hosted password manager · no cloud password manager · Tauri password manager · libsodium · SQLCipher*

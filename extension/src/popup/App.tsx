@@ -62,7 +62,7 @@ export default function App() {
     } catch (e) {
       setError(
         e instanceof Error && e.message.includes("Native host")
-          ? "VaultPass desktop is not running."
+          ? "LSPV desktop is not running."
           : String(e)
       );
     } finally {
@@ -148,7 +148,7 @@ export default function App() {
       <div className="center locked">
         <div className="icon">🔒</div>
         <p className="locked-title">Vault is locked</p>
-        <p className="hint">Open VaultPass desktop to unlock.</p>
+        <p className="hint">Open LSPV desktop to unlock.</p>
       </div>
     );
   }
@@ -156,7 +156,7 @@ export default function App() {
   return (
     <div className="app">
       <header>
-        <span className="logo">🔐 VaultPass</span>
+        <span className="logo">🔐 LSPV</span>
         {profileLabel && (
           <span className="profile-label" title={profileLabel}>
             {profileLabel}

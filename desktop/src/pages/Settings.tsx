@@ -10,20 +10,24 @@ import {
   getProfiles,
   setProfileName,
   openGithub,
+  getAutostart,
+  setAutostart as setAutostartCmd,
 } from "../api/vault";
 import type { BrowserConfig, ImportRow, ProfileInfo } from "../types/vault";
 
 interface Props {
   onBack: () => void;
   onImported?: () => void;
+  onVaultLocked?: () => void;
 }
 
-type Tab = "security" | "browser" | "import" | "about";
+type Tab = "general" | "security" | "browser" | "import" | "about";
 
-export function Settings({ onBack, onImported }: Props) {
-  const [tab, setTab] = useState<Tab>("security");
+export function Settings({ onBack, onImported, onVaultLocked }: Props) {
+  const [tab, setTab] = useState<Tab>("general");
 
   const tabs: { id: Tab; label: string }[] = [
+    { id: "general",  label: "General"  },
     { id: "security", label: "Security" },
     { id: "browser",  label: "Browser"  },
     { id: "import",   label: "Import"   },
@@ -60,11 +64,78 @@ export function Settings({ onBack, onImported }: Props) {
       </div>
 
       <div className="flex-1 overflow-y-auto">
+        {tab === "general"  && <GeneralTab />}
         {tab === "security" && <SecurityTab />}
         {tab === "browser"  && <BrowserTab />}
         {tab === "import"   && <ImportTab onImported={onImported} />}
         {tab === "about"    && <AboutTab />}
       </div>
+    </div>
+  );
+}
+
+// ── General Tab ───────────────────────────────────────────────────────────────
+
+function GeneralTab() {
+  const [autostart, setAutostart] = useState(false);
+  const [loading, setLoading]     = useState(true);
+  const [status, setStatus]       = useState<{ type: "success" | "error"; msg: string } | null>(null);
+
+  useEffect(() => {
+    getAutostart().then(setAutostart).finally(() => setLoading(false));
+  }, []);
+
+  async function toggleAutostart() {
+    const next = !autostart;
+    try {
+      await setAutostartCmd(next);
+      setAutostart(next);
+      setStatus({
+        type: "success",
+        msg: next ? "LSPV will start with your system." : "Autostart disabled.",
+      });
+    } catch (err) {
+      setStatus({ type: "error", msg: String(err) });
+    }
+  }
+
+  if (loading) return <div className="p-6 text-[var(--muted)] text-sm">Loading…</div>;
+
+  return (
+    <div className="p-6 max-w-md mx-auto w-full flex flex-col gap-4">
+      {/* Autostart toggle */}
+      <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4
+                      flex items-center justify-between gap-4">
+        <div>
+          <div className="font-medium text-sm">Start with system</div>
+          <div className="text-[var(--muted)] text-xs mt-0.5">
+            Launch automatically when you log in.
+          </div>
+        </div>
+        <button
+          onClick={toggleAutostart}
+          className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 ${
+            autostart ? "bg-[var(--accent)]" : "bg-[var(--border)]"
+          }`}
+          title={autostart ? "Disable autostart" : "Enable autostart"}
+        >
+          <span
+            className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow-sm
+                        transition-transform ${autostart ? "translate-x-5" : "translate-x-0"}`}
+          />
+        </button>
+      </div>
+
+      {/* Tray info (read-only) */}
+      <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
+        <div className="font-medium text-sm mb-1">Minimize to tray</div>
+        <div className="text-[var(--muted)] text-xs leading-relaxed">
+          Closing the window hides LSPV to the system tray. Left-click the tray icon to
+          toggle visibility. Right-click for Show, Lock, or Quit.
+        </div>
+      </div>
+
+      {status && <Alert type={status.type}>{status.msg}</Alert>}
     </div>
   );
 }
@@ -192,7 +263,7 @@ function BrowserTab() {
       {/* Chrome / Edge */}
       <IdSection
         label="Chrome / Edge extension IDs"
-        hint='chrome://extensions → enable Developer mode → copy the ID shown under VaultPass.'
+        hint='chrome://extensions → enable Developer mode → copy the ID shown under LSPV.'
         ids={cfg.chromeIds}
         input={chromeInput}
         onInputChange={setChromeInput}
@@ -203,8 +274,8 @@ function BrowserTab() {
       {/* Firefox */}
       <IdSection
         label="Firefox extension ID"
-        hint='The extension always uses a fixed ID: vaultpass@vaultpass.app — just click Add.'
-        defaultValue="vaultpass@vaultpass.app"
+        hint='The extension always uses a fixed ID: lspv@lspv.app — just click Add.'
+        defaultValue="lspv@lspv.app"
         ids={cfg.firefoxIds}
         input={firefoxInput}
         onInputChange={setFirefoxInput}
@@ -454,7 +525,7 @@ function ProfilesSection({ profiles, onRename }: ProfilesSectionProps) {
     <div className="flex flex-col gap-2">
       <div className="font-medium text-sm">Connected profiles</div>
       <div className="text-xs text-[var(--muted)]">
-        Each Chrome / Firefox profile that connects to VaultPass appears here.
+        Each Chrome / Firefox profile that connects to LSPV appears here.
         You can give them a friendly name.
       </div>
 

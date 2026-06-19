@@ -85,3 +85,11 @@ export const exportBackup = (backupPath: string, seedPhrase: string) =>
 
 export const restoreBackup = (backupPath: string, destDir: string, seedPhrase: string) =>
   invoke<void>("restore_backup", { backupPath, destDir, seedPhrase });
+
+// ── Autostart ─────────────────────────────────────────────────────────────────
+
+export const getAutostart = () =>
+  invoke<boolean>("get_autostart");
+
+export const setAutostart = (enable: boolean) =>
+  invoke<void>("set_autostart", { enable });

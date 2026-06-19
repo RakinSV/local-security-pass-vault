@@ -418,3 +418,127 @@ pub async fn keychain_delete_key(vault_uuid: String) -> Result<(), AppError> {
     crate::keychain::delete_vault_key(&vault_uuid);
     Ok(())
 }
+
+// ── Autostart ──────────────────────────────────────────────────────────────────
+
+#[cfg(target_os = "windows")]
+const AUTOSTART_REG_KEY: &str = "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run";
+#[cfg(target_os = "windows")]
+const AUTOSTART_REG_NAME: &str = "LocalSecurityPassVault";
+
+fn get_exe_path() -> Result<String, AppError> {
+    std::env::current_exe()
+        .map_err(|e| AppError::Other(e.to_string()))
+        .map(|p| p.to_string_lossy().into_owned())
+}
+
+/// Returns true if the app is registered to launch at OS startup.
+#[tauri::command]
+pub async fn get_autostart() -> bool {
+    get_autostart_impl()
+}
+
+/// Enables or disables launching the app at OS startup.
+#[tauri::command]
+pub async fn set_autostart(enable: bool) -> Result<(), AppError> {
+    set_autostart_impl(enable)
+}
+
+#[cfg(target_os = "windows")]
+fn get_autostart_impl() -> bool {
+    use winreg::enums::HKEY_CURRENT_USER;
+    use winreg::RegKey;
+    RegKey::predef(HKEY_CURRENT_USER)
+        .open_subkey(AUTOSTART_REG_KEY)
+        .and_then(|k| k.get_value::<String, _>(AUTOSTART_REG_NAME))
+        .is_ok()
+}
+
+#[cfg(target_os = "windows")]
+fn set_autostart_impl(enable: bool) -> Result<(), AppError> {
+    use winreg::enums::{HKEY_CURRENT_USER, KEY_SET_VALUE};
+    use winreg::RegKey;
+    let exe = get_exe_path()?;
+    let key = RegKey::predef(HKEY_CURRENT_USER)
+        .open_subkey_with_flags(AUTOSTART_REG_KEY, KEY_SET_VALUE)
+        .map_err(|e| AppError::Other(e.to_string()))?;
+    if enable {
+        key.set_value(AUTOSTART_REG_NAME, &exe)
+            .map_err(|e| AppError::Other(e.to_string()))
+    } else {
+        let _ = key.delete_value(AUTOSTART_REG_NAME);
+        Ok(())
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn get_autostart_impl() -> bool {
+    let home = std::env::var("HOME").unwrap_or_default();
+    std::path::Path::new(&format!(
+        "{}/Library/LaunchAgents/com.lspv.app.plist",
+        home
+    ))
+    .exists()
+}
+
+#[cfg(target_os = "macos")]
+fn set_autostart_impl(enable: bool) -> Result<(), AppError> {
+    let exe  = get_exe_path()?;
+    let home = std::env::var("HOME")
+        .map_err(|_| AppError::Other("HOME env var not set".into()))?;
+    let dir  = format!("{}/Library/LaunchAgents", home);
+    let path = format!("{}/com.lspv.app.plist", dir);
+    if enable {
+        std::fs::create_dir_all(&dir).ok();
+        let plist = format!(
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n\
+             <!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \
+             \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n\
+             <plist version=\"1.0\"><dict>\n\
+             <key>Label</key><string>com.lspv.app</string>\n\
+             <key>ProgramArguments</key><array><string>{exe}</string></array>\n\
+             <key>RunAtLoad</key><true/>\n\
+             <key>KeepAlive</key><false/>\n\
+             </dict></plist>\n"
+        );
+        std::fs::write(&path, plist).map_err(|e| AppError::Other(e.to_string()))
+    } else {
+        let _ = std::fs::remove_file(&path);
+        Ok(())
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn get_autostart_impl() -> bool {
+    let home = std::env::var("HOME").unwrap_or_default();
+    std::path::Path::new(&format!("{}/.config/autostart/lspv.desktop", home)).exists()
+}
+
+#[cfg(target_os = "linux")]
+fn set_autostart_impl(enable: bool) -> Result<(), AppError> {
+    let exe  = get_exe_path()?;
+    let home = std::env::var("HOME")
+        .map_err(|_| AppError::Other("HOME env var not set".into()))?;
+    let dir  = format!("{}/.config/autostart", home);
+    let path = format!("{}/lspv.desktop", dir);
+    if enable {
+        std::fs::create_dir_all(&dir).ok();
+        let content = format!(
+            "[Desktop Entry]\nType=Application\nName=Local Security Pass Vault\n\
+             Exec={exe}\nHidden=false\nNoDisplay=false\n\
+             X-GNOME-Autostart-enabled=true\n"
+        );
+        std::fs::write(&path, content).map_err(|e| AppError::Other(e.to_string()))
+    } else {
+        let _ = std::fs::remove_file(&path);
+        Ok(())
+    }
+}
+
+#[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+fn get_autostart_impl() -> bool { false }
+
+#[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+fn set_autostart_impl(_enable: bool) -> Result<(), AppError> {
+    Err(AppError::Other("Autostart not supported on this platform".into()))
+}

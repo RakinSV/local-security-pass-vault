@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "VaultPass",
-  "version": "0.1.0",
-  "description": "Local password manager — no cloud, no telemetry.",
+  "name": "LSPV",
+  "version": "0.2.0",
+  "description": "Local Security Pass Vault — offline password manager, no cloud, no telemetry.",
 
   "permissions": [
     "activeTab",
@@ -38,7 +38,7 @@
       "48": "icons/icon48.png",
       "128": "icons/icon128.png"
     },
-    "default_title": "VaultPass"
+    "default_title": "LSPV"
   },
 
   "icons": {
@@ -49,7 +49,7 @@
 
   "browser_specific_settings": {
     "gecko": {
-      "id": "vaultpass@vaultpass.app",
+      "id": "lspv@lspv.app",
       "strict_min_version": "109.0"
     }
   }

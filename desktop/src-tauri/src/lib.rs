@@ -8,7 +8,11 @@ mod pipe_server;
 mod profile_registry;
 mod state;
 
-use tauri::Manager;
+use tauri::{
+    menu::{MenuBuilder, MenuItemBuilder, PredefinedMenuItem},
+    tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
+    Manager,
+};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -17,7 +21,7 @@ pub fn run() {
     tauri::Builder::default()
         .manage(state::AppState::default())
         .setup(|app| {
-            // Load (or generate) Ed25519 signing key pair
+            // ── Ed25519 signing key ───────────────────────────────────────────
             let data_dir = app
                 .path()
                 .app_data_dir()
@@ -34,11 +38,82 @@ pub fn run() {
                 Err(e) => eprintln!("Warning: could not load signing key: {e}"),
             }
 
-            // Start named-pipe IPC server for the browser extension
+            // ── Named-pipe IPC for browser extension ──────────────────────────
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 pipe_server::run(handle).await;
             });
+
+            // ── System tray ───────────────────────────────────────────────────
+            let show_item = MenuItemBuilder::with_id("show", "Show Window").build(app)?;
+            let lock_item = MenuItemBuilder::with_id("lock", "Lock && Hide").build(app)?;
+            let sep       = PredefinedMenuItem::separator(app)?;
+            let quit_item = MenuItemBuilder::with_id("quit", "Quit").build(app)?;
+            let tray_menu = MenuBuilder::new(app)
+                .items(&[&show_item, &lock_item, &sep, &quit_item])
+                .build()?;
+
+            if let Some(icon) = app.default_window_icon().cloned() {
+                TrayIconBuilder::new()
+                    .icon(icon)
+                    .tooltip("Local Security Pass Vault")
+                    .menu(&tray_menu)
+                    .on_menu_event(|app, event| {
+                        match event.id().as_ref() {
+                            "show" => {
+                                if let Some(w) = app.get_webview_window("main") {
+                                    w.show().ok();
+                                    w.set_focus().ok();
+                                }
+                            }
+                            "lock" => {
+                                let state = app.state::<state::AppState>();
+                                if let Ok(mut guard) = state.vault.lock() {
+                                    if let Some(vault) = guard.as_ref() {
+                                        keychain::delete_vault_key(&vault.vault_id_str());
+                                    }
+                                    *guard = None;
+                                }
+                                app.emit("vault-locked", ()).ok();
+                                if let Some(w) = app.get_webview_window("main") {
+                                    w.hide().ok();
+                                }
+                            }
+                            "quit" => app.exit(0),
+                            _ => {}
+                        }
+                    })
+                    .on_tray_icon_event(|tray, event| {
+                        if let TrayIconEvent::Click {
+                            button: MouseButton::Left,
+                            button_state: MouseButtonState::Up,
+                            ..
+                        } = event
+                        {
+                            let app = tray.app_handle();
+                            if let Some(w) = app.get_webview_window("main") {
+                                if w.is_visible().unwrap_or(false) {
+                                    w.hide().ok();
+                                } else {
+                                    w.show().ok();
+                                    w.set_focus().ok();
+                                }
+                            }
+                        }
+                    })
+                    .build(app)?;
+            }
+
+            // ── Close window → hide to tray ───────────────────────────────────
+            if let Some(main_win) = app.get_webview_window("main") {
+                let w = main_win.clone();
+                main_win.on_window_event(move |event| {
+                    if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                        api.prevent_close();
+                        w.hide().ok();
+                    }
+                });
+            }
 
             Ok(())
         })
@@ -71,6 +146,8 @@ pub fn run() {
             commands::open_github,
             commands::keychain_has_key,
             commands::keychain_delete_key,
+            commands::get_autostart,
+            commands::set_autostart,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
