@@ -346,24 +346,37 @@ impl Vault {
         self.save()
     }
 
-    // ── Бекап с seed-фразой ────────────────────────────────────────────────────
+    // ── Бэкап с BIP-39 мнемоникой (ADR-003) ────────────────────────────────────
 
-    /// Генерирует seed-фразу из 17 случайных слов BIP-39.
+    /// Генерирует 24-словную BIP-39 мнемонику для бэкапов (256-бит энтропии).
+    /// Показывать пользователю ОДИН РАЗ; VaultPass не хранит мнемонику на диске.
     pub fn generate_backup_phrase() -> Result<String> {
-        backup::generate_phrase(17)
+        backup::generate_mnemonic()
     }
 
-    /// Экспортирует vault в зашифрованный `.vpbak` файл.
-    /// `dest` — путь к создаваемому файлу бекапа.
-    /// `phrase` — seed-фраза (например, из `generate_backup_phrase()`).
+    /// Экспортирует vault в зашифрованный бэкап-файл формата v2 (`.vbk`).
+    /// `phrase` — 24-словная BIP-39 мнемоника из `generate_backup_phrase()`.
     pub fn export_backup(&self, dest: &std::path::Path, phrase: &str) -> Result<()> {
         backup::export(&self.paths.dir, dest, phrase)
     }
 
-    /// Восстанавливает vault из `.vpbak` файла в `dest_dir`.
-    /// Неверная фраза → `DecryptionFailed`.
+    /// Восстанавливает vault из бэкап-файла (поддерживает v1 и v2).
+    /// Неверная фраза/мнемоника → `DecryptionFailed`.
     pub fn restore_from_backup(src: &std::path::Path, dest_dir: &std::path::Path, phrase: &str) -> Result<()> {
         backup::restore(src, dest_dir, phrase)
+    }
+
+    // ── OS Keychain helpers ───────────────────────────────────────────────────
+
+    /// UUID vault в виде строки — для именования записей в OS Keychain.
+    pub fn vault_id_str(&self) -> String {
+        self.meta.vault_id.to_string()
+    }
+
+    /// Байты vault key — для хранения в OS Keychain после unlock.
+    /// ТОЛЬКО для Keychain интеграции в desktop-слое. Не раскрывать в WebView.
+    pub fn vault_key_bytes(&self) -> &[u8; 32] {
+        self.vault_key.as_bytes()
     }
 
     // ── Конвертация Item ↔ ItemRow ─────────────────────────────────────────────

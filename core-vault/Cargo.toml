@@ -21,6 +21,12 @@ uuid = { version = "1", features = ["v4", "serde"] }
 # работаем с in-memory БД. См. решение от 2026-06 (отказ от SQLCipher).
 rusqlite = { version = "0.32", features = ["bundled", "serialize"] }
 
+# Бэкап: BIP-39 мнемоника (ADR-003) + BLAKE3 checksum.
+# bip39: English-only, без rand (используем libsodium CSPRNG).
+# blake3: быстрый криптографический хеш для проверки целостности.
+bip39   = "2"
+blake3  = "1"
+
 [features]
 # Раскрывает внутренние точки входа для cargo-fuzz (см. fuzz/). Не для прода.
 fuzz = []

@@ -16,15 +16,61 @@
   "host_permissions": [],  // пустой — расширение не делает сетевых запросов
   
   "content_security_policy": {
-    "extension_pages": "default-src 'self'; script-src 'self'; object-src 'none'; style-src 'self' 'unsafe-inline'"
-    // 'unsafe-inline' для стилей — допустимо, НО:
-    // script-src 'self' — НИКАКОГО eval(), НИКАКИХ inline скриптов
+    "extension_pages": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'none'; object-src 'none'; frame-src 'none'; worker-src 'none'"
   },
   
   "background": {
     "service_worker": "background.js"
     // Service Worker живёт max 5 минут — принудительно очищает память с паролями
   }
+}
+```
+
+## Content Security Policy (MV3)
+
+Ключевые директивы CSP:
+- `connect-src 'none'` — НИКАКИХ сетевых запросов из расширения
+- `object-src 'none'` — запрет Flash/плагинов
+- `frame-src 'none'` — запрет iframe (защита от clickjacking)
+- `worker-src 'none'` — запрет создания Worker-ов из расширения
+- `script-src 'self'` — только скрипты из пакета расширения, никакого eval()
+- `img-src 'self' data:` — favicon через data: URI допустимо
+
+## Subresource Integrity для content scripts
+
+В manifest.json все скрипты ссылаются только на локальные файлы.
+При сборке (webpack/esbuild) генерировать хеши:
+
+```json
+{
+  "content_scripts": [{
+    "matches": ["<all_urls>"],
+    "js": ["content/autofill.js"],
+    "run_at": "document_idle"
+  }]
+}
+```
+
+В CI pipeline добавить шаг проверки: sha256sum всех .js файлов в extension/
+сравнивать с манифестом. Если расхождение — build fail.
+
+## Защита от XSS в content script
+
+```typescript
+// НИКОГДА не делать так:
+// document.querySelector('input').value = password;  // небезопасно если DOM скомпрометирован
+
+// Делать через nativeInputValueSetter (имитация ввода пользователя):
+function fillField(el: HTMLInputElement, value: string): void {
+  const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
+    window.HTMLInputElement.prototype, 'value'
+  )?.set;
+  nativeInputValueSetter?.call(el, value);
+  el.dispatchEvent(new Event('input', { bubbles: true }));
+  el.dispatchEvent(new Event('change', { bubbles: true }));
+
+  // Очистить переменную немедленно после использования
+  (value as unknown) = null;
 }
 ```
 

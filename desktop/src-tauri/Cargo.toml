@@ -22,6 +22,7 @@ csv         = "1"
 tokio                = { version = "1", features = ["net", "io-util", "rt-multi-thread"] }
 libsodium-sys-stable = "1"
 core-vault           = { path = "../../core-vault" }
+keyring              = "2"
 
 [target.'cfg(windows)'.dependencies]
 winreg = "0.52"

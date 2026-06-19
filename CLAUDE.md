@@ -41,6 +41,10 @@ vaultpass/
 | Расширение | TypeScript + Manifest V3 | Стандарт Chrome/Firefox |
 | БД | SQLCipher (rusqlite + sqlcipher feature) | SQLite + AES-256 шифрование страниц |
 | UI | React + Tailwind (в WebView) | Знакомый стек |
+| Keychain | keyring = "2" crate | Единый API Win/Linux/macOS для хранения Vault Key |
+| BIP-39 | bip39 = "2" crate | Мнемоника из 24 слов — ключ для бэкапов |
+| Бэкапы | age = "0.10" + blake3 | Современный формат шифрования + checksum |
+| Авто-блокировка | zeroize = "1" crate | Гарантированная очистка ключей из памяти |
 
 ## @-импорты детальных правил
 
@@ -49,3 +53,4 @@ vaultpass/
 @.claude/rules/vault-schema.md
 @.claude/rules/browser-extension.md
 @.claude/rules/testing.md
+@.claude/rules/backup.md

@@ -79,6 +79,14 @@ pub async fn open_vault(
 ) -> Result<(), AppError> {
     let dir = PathBuf::from(&dir_path);
     let vault = core_vault::Vault::open(&dir, password.as_bytes())?;
+
+    // После успешного unlock — сохраняем Vault Key в OS Keychain для quick-unlock.
+    // Non-fatal: если Keychain недоступен (headless, CI), игнорируем.
+    let vault_uuid = vault.vault_id_str();
+    if let Err(e) = crate::keychain::store_vault_key(&vault_uuid, vault.vault_key_bytes()) {
+        eprintln!("keychain store failed (non-fatal): {e}");
+    }
+
     let mut guard = state.vault.lock().map_err(|_| AppError::LockPoisoned)?;
     *guard = Some(vault);
     let mut dir_guard = state.vault_dir.lock().map_err(|_| AppError::LockPoisoned)?;
@@ -89,6 +97,10 @@ pub async fn open_vault(
 #[tauri::command]
 pub async fn lock_vault(state: State<'_, AppState>) -> Result<(), AppError> {
     let mut guard = state.vault.lock().map_err(|_| AppError::LockPoisoned)?;
+    // Удаляем Vault Key из OS Keychain перед drop vault.
+    if let Some(vault) = guard.as_ref() {
+        crate::keychain::delete_vault_key(&vault.vault_id_str());
+    }
     *guard = None; // Drop triggers memzero via Key::drop
     Ok(())
 }
@@ -310,22 +322,23 @@ pub async fn import_items_from_csv(
     Ok(count)
 }
 
-// ── Backup ─────────────────────────────────────────────────────────────────────
+// ── Backup (BIP-39 + BLAKE3, ADR-003) ─────────────────────────────────────────
 
-/// Generates a 17-word BIP-39 seed phrase for backup encryption.
+/// Generates a 24-word BIP-39 mnemonic (256-bit entropy) for backup encryption.
+/// Show to user ONCE — VaultPass never stores the mnemonic on disk.
 #[tauri::command]
 pub async fn generate_seed_phrase() -> Result<String, AppError> {
     Ok(core_vault::Vault::generate_backup_phrase()?)
 }
 
-/// Returns true if all words in the phrase are in the BIP-39 wordlist.
+/// Returns true if the phrase is a valid BIP-39 mnemonic (correct words + checksum).
 #[tauri::command]
 pub async fn validate_seed_phrase(phrase: String) -> bool {
-    core_vault::backup::validate_phrase(&phrase)
+    core_vault::backup::validate_mnemonic(&phrase)
 }
 
-/// Exports the vault to an encrypted `.vpbak` file at `backup_path`.
-/// The vault must be unlocked.
+/// Exports the vault to an encrypted backup file (v2 format, `.vbk`).
+/// The vault must be unlocked. `seed_phrase` must be the 24-word BIP-39 mnemonic.
 #[tauri::command]
 pub async fn export_backup(
     state: State<'_, AppState>,
@@ -338,7 +351,7 @@ pub async fn export_backup(
     Ok(())
 }
 
-/// Restores a vault from a `.vpbak` backup file into `dest_dir`.
+/// Restores a vault from a backup file (supports v1 and v2 formats).
 /// The current vault does not need to be unlocked.
 #[tauri::command]
 pub async fn restore_backup(
@@ -351,5 +364,22 @@ pub async fn restore_backup(
         std::path::Path::new(&dest_dir),
         &seed_phrase,
     )?;
+    Ok(())
+}
+
+// ── OS Keychain ────────────────────────────────────────────────────────────────
+
+/// Returns true if a Vault Key is stored in the OS Keychain for `vault_uuid`.
+/// Used by UI to decide whether to show the quick-unlock option.
+#[tauri::command]
+pub async fn keychain_has_key(vault_uuid: String) -> bool {
+    crate::keychain::has_vault_key(&vault_uuid)
+}
+
+/// Removes the Vault Key for `vault_uuid` from the OS Keychain.
+/// Useful for "disable quick unlock" setting.
+#[tauri::command]
+pub async fn keychain_delete_key(vault_uuid: String) -> Result<(), AppError> {
+    crate::keychain::delete_vault_key(&vault_uuid);
     Ok(())
 }

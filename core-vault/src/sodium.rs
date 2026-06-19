@@ -174,6 +174,17 @@ pub fn argon2id_derive<const OUT: usize>(
     password: &[u8],
     salt: &[u8; SALT_LEN],
 ) -> Result<Secret<OUT>> {
+    argon2id_derive_custom::<OUT>(password, salt, KDF_OPSLIMIT, KDF_MEMLIMIT)
+}
+
+/// Деривация `OUT` байт с явными параметрами Argon2id (для бэкапа — ADR-003).
+/// НЕ снижать параметры без bump schema_version и миграции.
+pub fn argon2id_derive_custom<const OUT: usize>(
+    password: &[u8],
+    salt: &[u8; SALT_LEN],
+    opslimit: u64,
+    memlimit: usize,
+) -> Result<Secret<OUT>> {
     ensure_init()?;
     let mut out = Secret::<OUT>::zeroed();
     // SAFETY: out длиной OUT, salt длиной SALT_LEN, password валиден.
@@ -184,8 +195,8 @@ pub fn argon2id_derive<const OUT: usize>(
             password.as_ptr() as *const _,
             password.len() as u64,
             salt.as_ptr(),
-            KDF_OPSLIMIT,
-            KDF_MEMLIMIT,
+            opslimit,
+            memlimit,
             ffi::crypto_pwhash_ALG_ARGON2ID13 as i32,
         )
     };

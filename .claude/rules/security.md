@@ -251,3 +251,94 @@ Err(VaultError::DecryptionFailed)
 
 // Уровень логирования в продакшне: INFO (не DEBUG, не TRACE)
 ```
+
+## OS Keychain / Secure Enclave
+
+Vault Key после разблокировки ДОЛЖЕН храниться в OS Keychain,
+а не только в памяти процесса. Реализация по платформам:
+
+### Linux
+Использовать libsecret (org.freedesktop.secrets).
+Crate: secret-service = "3"
+Атрибуты записи:
+  service = "vaultpass"
+  account = vault UUID (из vault.meta)
+  label   = "VaultPass — Vault Key"
+
+### Windows
+Использовать Windows Credential Manager (DPAPI).
+Crate: keyring = "2"
+Target name: "VaultPass/VaultKey/{vault_uuid}"
+
+### macOS
+Использовать Security.framework Keychain.
+Crate: keyring = "2" (единый API для macOS/Win/Linux)
+Service: "vaultpass", Account: vault UUID
+
+### Правила
+- Vault Key записывается в Keychain ТОЛЬКО после успешного
+  ввода мастер-пароля (unlock)
+- При lock() — удалять запись из Keychain (не просто очищать память)
+- При следующем unlock() — предлагать биометрию ОС вместо мастер-пароля,
+  если Vault Key есть в Keychain (quick unlock flow)
+- Если Keychain недоступен (headless, CI) — fallback на in-memory
+- НИКОГДА не записывать мастер-пароль в Keychain — только производный ключ
+
+## Авто-блокировка (Auto-lock)
+
+Таймер запускается при каждом событии разблокировки.
+Сбрасывается при любом взаимодействии пользователя с vault.
+
+### Конфигурация (хранить в vault.meta, шифровать вместе с vault)
+- auto_lock_timeout_secs: u32  — дефолт 300 (5 минут), 0 = выключено
+- lock_on_minimize: bool        — дефолт true
+- lock_on_screensaver: bool     — дефолт true
+
+### Реализация в Tauri 2
+```rust
+// В Tauri app state
+struct VaultState {
+    vault_key: Mutex<Option<ZeroizeVec>>,  // zeroize crate
+    lock_timer: Mutex<Option<JoinHandle<()>>>,
+}
+
+// При авто-блокировке
+fn lock_vault(state: &VaultState) {
+    let mut key = state.vault_key.lock().unwrap();
+    if let Some(k) = key.take() {
+        drop(k);  // ZeroizeVec реализует Drop -> zeroize
+    }
+    // Удалить из OS Keychain тоже
+    keychain::delete_vault_key();
+}
+```
+
+### События Tauri для триггера блокировки
+- tauri::WindowEvent::Focused(false) + lock_on_minimize
+- tauri::api::idle::idle_time() > auto_lock_timeout
+- Системное событие screensaver/sleep через tauri-plugin-os
+
+### Crates
+- zeroize = "1" с feature = ["derive"] — для ZeroizeVec и #[derive(Zeroize)]
+- tauri-plugin-os = "2" — для системных событий
+
+### Правила
+- После lock(): state.vault_key = None, OS Keychain запись удалена
+- Если Tauri window closes — lock() вызывается в on_window_event
+- Panic в крипто-операции → lock() вызывается в panic hook
+
+## GPU VRAM residue (LeftoverLocals)
+
+Уязвимость: GPU может читать VRAM предыдущих процессов.
+Затрагивает WebGL в WebView.
+
+### Правила для Tauri WebView
+- Запретить WebGL в webview: в tauri.conf.json добавить
+  "allowlist": { "shell": ..., "webgl": false }  — если Tauri поддерживает
+- Альтернатива: CSP заголовок Content-Security-Policy запрещает
+  небезопасные WebGL API: добавить в Tauri window config
+  "dangerousUseScheme": false
+- Пароли НИКОГДА не передаются в WebView как plaintext JS переменные —
+  только через IPC команды с немедленным использованием и очисткой
+- В content script расширения: после автозаполнения поля — вызвать
+  field.value = '' через 100ms (очистка из DOM)

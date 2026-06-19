@@ -3,6 +3,7 @@ mod commands;
 mod csv_import;
 mod ed25519_key;
 mod error;
+mod keychain;
 mod pipe_server;
 mod profile_registry;
 mod state;
@@ -65,6 +66,8 @@ pub fn run() {
             commands::validate_seed_phrase,
             commands::export_backup,
             commands::restore_backup,
+            commands::keychain_has_key,
+            commands::keychain_delete_key,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
