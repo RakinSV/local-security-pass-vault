@@ -23,7 +23,7 @@ interface Props {
 
 type Tab = "general" | "security" | "browser" | "import" | "about";
 
-export function Settings({ onBack, onImported, onVaultLocked }: Props) {
+export function Settings({ onBack, onImported }: Props) {
   const [tab, setTab] = useState<Tab>("general");
 
   const tabs: { id: Tab; label: string }[] = [
