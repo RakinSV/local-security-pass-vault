@@ -12,7 +12,7 @@ env:
 jobs:
   # ── Desktop app ──────────────────────────────────────────────────────────────
   desktop:
-    name: Desktop (${{ matrix.os }})
+    name: Desktop (${{ matrix.label }})
     strategy:
       fail-fast: false
       matrix:
@@ -24,6 +24,10 @@ jobs:
           - os: ubuntu-24.04
             target: x86_64-unknown-linux-gnu
             label: linux-x64
+
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            label: macos-arm64
 
     runs-on: ${{ matrix.os }}
 
@@ -48,7 +52,9 @@ jobs:
             libgtk-3-dev \
             libayatana-appindicator3-dev \
             librsvg2-dev \
-            patchelf
+            patchelf \
+            libdbus-1-dev \
+            libsecret-1-dev
 
       # ── Frontend ─────────────────────────────────────────────────────────────
       - uses: actions/setup-node@v4
@@ -72,6 +78,15 @@ jobs:
         working-directory: desktop
         run: npm run tauri -- build --target ${{ matrix.target }} --bundles appimage
 
+      - name: Build desktop (macOS — DMG)
+        if: runner.os == 'macOS'
+        working-directory: desktop
+        env:
+          # Skip Apple code-signing in CI (no signing identity available).
+          # Builds a valid but unsigned DMG for distribution.
+          APPLE_SIGNING_IDENTITY: '-'
+        run: npm run tauri -- build --target ${{ matrix.target }} --bundles dmg
+
       # ── Artifacts ────────────────────────────────────────────────────────────
       - name: Upload Windows installer
         if: runner.os == 'Windows'
@@ -89,9 +104,17 @@ jobs:
           path: target/${{ matrix.target }}/release/bundle/appimage/*.AppImage
           retention-days: 30
 
+      - name: Upload macOS DMG
+        if: runner.os == 'macOS'
+        uses: actions/upload-artifact@v4
+        with:
+          name: vaultpass-desktop-${{ matrix.label }}
+          path: target/${{ matrix.target }}/release/bundle/dmg/*.dmg
+          retention-days: 30
+
   # ── Native messaging host ─────────────────────────────────────────────────
   native-host:
-    name: Native host (${{ matrix.os }})
+    name: Native host (${{ matrix.label }})
     strategy:
       fail-fast: false
       matrix:
@@ -106,6 +129,11 @@ jobs:
             label: linux-x64
             bin: vaultpass-native-host
 
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            label: macos-arm64
+            bin: vaultpass-native-host
+
     runs-on: ${{ matrix.os }}
 
     steps:
@@ -117,9 +145,13 @@ jobs:
 
       - name: System deps (Linux)
         if: runner.os == 'Linux'
+        env:
+          DEBIAN_FRONTEND: noninteractive
         run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential libssl-dev libsodium-dev
+          sudo apt-get update -y
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            libssl-dev
 
       - name: Build native host
         run: >
@@ -163,5 +195,7 @@ jobs:
             --generate-notes \
             artifacts/vaultpass-desktop-windows-x64/*.exe \
             artifacts/vaultpass-desktop-linux-x64/*.AppImage \
+            artifacts/vaultpass-desktop-macos-arm64/*.dmg \
             artifacts/vaultpass-native-host-windows-x64/*.exe \
-            artifacts/vaultpass-native-host-linux-x64/vaultpass-native-host
+            artifacts/vaultpass-native-host-linux-x64/vaultpass-native-host \
+            artifacts/vaultpass-native-host-macos-arm64/vaultpass-native-host
