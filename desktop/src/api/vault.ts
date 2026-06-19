@@ -4,8 +4,14 @@ import type { BrowserConfig, ImportRow, Item, ItemPayload, ItemSummary, ProfileI
 export const vaultStatus = () =>
   invoke<VaultStatus>("vault_status");
 
-export const getDefaultVaultDir = () =>
-  invoke<string>("get_default_vault_dir");
+export const suggestVaultDir = (name: string) =>
+  invoke<string>("suggest_vault_dir", { name });
+
+export const pickFolder = () =>
+  invoke<string | null>("pick_folder");
+
+export const openGithub = () =>
+  invoke<void>("open_github");
 
 export const createVault = (dirPath: string, password: string, hint?: string) =>
   invoke<void>("create_vault", { dirPath, password, hint: hint ?? null });
@@ -28,12 +34,7 @@ export const createItem = (
   folderId: string | null,
   favorite: boolean
 ) =>
-  invoke<string>("create_item", {
-    title,
-    payload,
-    folderId,
-    favorite,
-  });
+  invoke<string>("create_item", { title, payload, folderId, favorite });
 
 export const updateItem = (
   id: string,
@@ -47,10 +48,7 @@ export const updateItem = (
 export const deleteItem = (id: string) =>
   invoke<void>("delete_item", { id });
 
-export const changeMasterPassword = (
-  oldPassword: string,
-  newPassword: string
-) =>
+export const changeMasterPassword = (oldPassword: string, newPassword: string) =>
   invoke<void>("change_master_password", { oldPassword, newPassword });
 
 export const getBrowserIntegrations = () =>

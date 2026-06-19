@@ -9,6 +9,7 @@ import {
   importItemsFromCsv,
   getProfiles,
   setProfileName,
+  openGithub,
 } from "../api/vault";
 import type { BrowserConfig, ImportRow, ProfileInfo } from "../types/vault";
 
@@ -17,15 +18,16 @@ interface Props {
   onImported?: () => void;
 }
 
-type Tab = "security" | "browser" | "import";
+type Tab = "security" | "browser" | "import" | "about";
 
 export function Settings({ onBack, onImported }: Props) {
   const [tab, setTab] = useState<Tab>("security");
 
   const tabs: { id: Tab; label: string }[] = [
     { id: "security", label: "Security" },
-    { id: "browser", label: "Browser" },
-    { id: "import",  label: "Import"  },
+    { id: "browser",  label: "Browser"  },
+    { id: "import",   label: "Import"   },
+    { id: "about",    label: "About"    },
   ];
 
   return (
@@ -61,6 +63,7 @@ export function Settings({ onBack, onImported }: Props) {
         {tab === "security" && <SecurityTab />}
         {tab === "browser"  && <BrowserTab />}
         {tab === "import"   && <ImportTab onImported={onImported} />}
+        {tab === "about"    && <AboutTab />}
       </div>
     </div>
   );
@@ -518,6 +521,85 @@ function ProfilesSection({ profiles, onRename }: ProfilesSectionProps) {
           })}
         </div>
       )}
+    </div>
+  );
+}
+
+// ── About Tab ─────────────────────────────────────────────────────────────────
+
+function AboutTab() {
+  const [copied, setCopied] = useState(false);
+  const GITHUB = "https://github.com/RakinSV/local-security-pass-vault";
+
+  async function handleGithub() {
+    try {
+      await openGithub();
+    } catch {
+      // Fallback: copy URL to clipboard
+      await navigator.clipboard.writeText(GITHUB).catch(() => {});
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  }
+
+  return (
+    <div className="p-6 max-w-md mx-auto w-full flex flex-col gap-6">
+      <div className="flex items-center gap-4">
+        <div className="text-5xl">🔐</div>
+        <div>
+          <h2 className="font-bold text-base text-[var(--text)] leading-tight">
+            Local Security Pass Vault
+          </h2>
+          <div className="text-xs text-[var(--muted)] mt-0.5">Version 0.1.0</div>
+        </div>
+      </div>
+
+      <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4 text-sm
+                      text-[var(--muted)] leading-relaxed">
+        Local password manager. No cloud, no telemetry, no network requests.
+        All data is stored locally and encrypted with libsodium (XChaCha20-Poly1305 + Argon2id).
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <div className="text-xs font-medium text-[var(--muted)] uppercase tracking-wider">Stack</div>
+        <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] divide-y divide-[var(--border)]">
+          {[
+            ["Crypto",   "libsodium · XChaCha20-Poly1305 · Argon2id"],
+            ["Desktop",  "Rust · Tauri 2 · React · Tailwind"],
+            ["Database", "SQLite · SQLCipher (AES-256)"],
+            ["Backups",  "BIP-39 24-word · BLAKE3 · XChaCha20"],
+            ["Keychain", "OS native (Windows / Linux / macOS)"],
+          ].map(([k, v]) => (
+            <div key={k} className="flex gap-3 px-4 py-2.5 text-sm">
+              <span className="text-[var(--muted)] w-20 flex-shrink-0">{k}</span>
+              <span className="text-[var(--text)] text-xs">{v}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <div className="text-xs font-medium text-[var(--muted)] uppercase tracking-wider">Source code</div>
+        <button
+          onClick={handleGithub}
+          className="flex items-center gap-3 rounded-xl border border-[var(--border)] bg-[var(--surface)]
+                     hover:border-[var(--accent)] hover:bg-[var(--surface)] px-4 py-3 transition-colors
+                     text-left group w-full"
+        >
+          <span className="text-lg">⌥</span>
+          <div className="flex-1">
+            <div className="text-sm font-medium text-[var(--text)] group-hover:text-[var(--accent)] transition-colors">
+              {copied ? "URL copied!" : "Open on GitHub"}
+            </div>
+            <div className="text-xs text-[var(--muted)] font-mono mt-0.5 truncate">{GITHUB}</div>
+          </div>
+          <span className="text-[var(--muted)] text-xs">↗</span>
+        </button>
+      </div>
+
+      <div className="text-xs text-[var(--muted)] text-center">
+        MIT License · Made with Rust 🦀
+      </div>
     </div>
   );
 }

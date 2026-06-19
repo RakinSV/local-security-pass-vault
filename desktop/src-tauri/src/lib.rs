@@ -66,6 +66,9 @@ pub fn run() {
             commands::validate_seed_phrase,
             commands::export_backup,
             commands::restore_backup,
+            commands::suggest_vault_dir,
+            commands::pick_folder,
+            commands::open_github,
             commands::keychain_has_key,
             commands::keychain_delete_key,
         ])

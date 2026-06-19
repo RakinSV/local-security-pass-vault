@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "VaultPass",
+  "productName": "Local Security Pass Vault",
   "version": "0.1.0",
-  "identifier": "com.vaultpass.app",
+  "identifier": "com.lspv.app",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "VaultPass",
+        "title": "Local Security Pass Vault",
         "width": 1100,
         "height": 700,
         "minWidth": 800,

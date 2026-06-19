@@ -367,6 +367,41 @@ pub async fn restore_backup(
     Ok(())
 }
 
+// ── Utility ────────────────────────────────────────────────────────────────────
+
+/// Returns a suggested directory path for a new vault based on the app data dir.
+/// Path format: <app_data>/vaults/<sanitized_name>
+#[tauri::command]
+pub async fn suggest_vault_dir(app: tauri::AppHandle, name: String) -> Result<String, AppError> {
+    let base = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| AppError::Other(e.to_string()))?;
+    let safe: String = name
+        .chars()
+        .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
+        .collect();
+    let safe = if safe.is_empty() { "vault".to_string() } else { safe };
+    Ok(base.join("vaults").join(safe).to_string_lossy().into_owned())
+}
+
+/// Opens a native folder-picker dialog and returns the chosen directory path.
+#[tauri::command]
+pub async fn pick_folder() -> Option<String> {
+    rfd::AsyncFileDialog::new()
+        .set_title("Choose vault folder")
+        .pick_folder()
+        .await
+        .map(|h| h.path().to_string_lossy().into_owned())
+}
+
+/// Opens the project GitHub page in the default system browser.
+#[tauri::command]
+pub async fn open_github() -> Result<(), AppError> {
+    webbrowser::open("https://github.com/RakinSV/local-security-pass-vault")
+        .map_err(|e| AppError::Other(e.to_string()))
+}
+
 // ── OS Keychain ────────────────────────────────────────────────────────────────
 
 /// Returns true if a Vault Key is stored in the OS Keychain for `vault_uuid`.

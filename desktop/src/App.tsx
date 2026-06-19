@@ -1,18 +1,19 @@
 import { useState, useEffect } from "react";
 import { vaultStatus } from "./api/vault";
-import { Welcome } from "./pages/Welcome";
+import { VaultPicker } from "./pages/VaultPicker";
 import { Setup } from "./pages/Setup";
 import { Unlock } from "./pages/Unlock";
 import { VaultList } from "./pages/VaultList";
 import { ItemDetail } from "./pages/ItemDetail";
 import { ItemForm } from "./pages/ItemForm";
 import { Settings } from "./pages/Settings";
+import type { VaultEntry } from "./lib/vaultRegistry";
 
 type Page =
   | { name: "loading" }
-  | { name: "welcome" }
+  | { name: "picker" }
   | { name: "setup" }
-  | { name: "unlock" }
+  | { name: "unlock"; entry: VaultEntry }
   | { name: "vault" }
   | { name: "detail"; id: string }
   | { name: "edit"; id: string }
@@ -29,17 +30,11 @@ export default function App() {
         const status = await vaultStatus();
         if (!status.isLocked) {
           setPage({ name: "vault" });
-          return;
-        }
-        // Can't check filesystem from JS — use localStorage as marker.
-        const hasVault = localStorage.getItem("vaultpass:hasVault") === "1";
-        if (hasVault) {
-          setPage({ name: "unlock" });
         } else {
-          setPage({ name: "welcome" });
+          setPage({ name: "picker" });
         }
       } catch {
-        setPage({ name: "welcome" });
+        setPage({ name: "picker" });
       }
     })();
   }, []);
@@ -56,11 +51,11 @@ export default function App() {
     );
   }
 
-  if (page.name === "welcome") {
+  if (page.name === "picker") {
     return (
-      <Welcome
-        onSetup={() => setPage({ name: "setup" })}
-        onUnlock={() => setPage({ name: "unlock" })}
+      <VaultPicker
+        onCreateVault={() => setPage({ name: "setup" })}
+        onOpenVault={entry => setPage({ name: "unlock", entry })}
       />
     );
   }
@@ -68,11 +63,8 @@ export default function App() {
   if (page.name === "setup") {
     return (
       <Setup
-        onCreated={() => {
-          localStorage.setItem("vaultpass:hasVault", "1");
-          setPage({ name: "vault" });
-        }}
-        onBack={() => setPage({ name: "welcome" })}
+        onCreated={() => setPage({ name: "vault" })}
+        onBack={() => setPage({ name: "picker" })}
       />
     );
   }
@@ -80,8 +72,9 @@ export default function App() {
   if (page.name === "unlock") {
     return (
       <Unlock
+        entry={page.entry}
         onUnlocked={() => setPage({ name: "vault" })}
-        onBack={() => setPage({ name: "welcome" })}
+        onBack={() => setPage({ name: "picker" })}
       />
     );
   }
@@ -92,7 +85,8 @@ export default function App() {
         refreshKey={refreshKey}
         onSelectItem={id => setPage({ name: "detail", id })}
         onAddItem={() => setPage({ name: "add" })}
-        onLocked={() => setPage({ name: "unlock" })}
+        onLocked={() => setPage({ name: "picker" })}
+        onSwitchVault={() => setPage({ name: "picker" })}
         onSettings={() => setPage({ name: "settings" })}
       />
     );
