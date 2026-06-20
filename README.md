@@ -74,7 +74,8 @@ LSPV takes a different approach: **the vault never leaves your machine.** No clo
 | Argon2id KDF | ✅ | ✅ | ❌ | ❌ |
 | Self-hosted option | ✅ | Yes (complex) | ❌ | ❌ |
 | Team sharing | ❌ | ✅ | ✅ | ✅ |
-| Mobile app | ❌ (roadmap) | ✅ | ✅ | ✅ |
+| Mobile app | 🔜 v0.3 (Android + iOS) | ✅ | ✅ | ✅ |
+| Hardware key (ESP32/M5Stick) | 🔜 v0.4 | ❌ | ❌ | ❌ |
 
 ---
 
@@ -232,12 +233,20 @@ PRs welcome. A few hard rules:
 
 ## Roadmap
 
+### v0.2 — Core UX
 - [ ] Backup export/import UI in Settings
 - [ ] Auto-lock timer (configurable idle timeout)
 - [ ] TOTP generator (in-app 2FA codes from stored secrets)
 - [ ] Password health report (duplicates, weak, breached — local check only)
+
+### v0.3 — Sync & Mobile
 - [ ] LAN sync between devices (no cloud involved)
-- [ ] Mobile companion app
+- [ ] **Android app** — Tauri 2 Mobile, same Rust crypto core, same React UI
+- [ ] **iOS app** — Tauri 2 Mobile for iPhone/iPad
+
+### v0.4 — Hardware Vault
+- [ ] **ESP32 hardware key** — store the vault unlock key on a physical device; the desktop app requires the ESP32 to be connected via USB/BLE to decrypt
+- [ ] **M5StickC Plus2 hardware vault** — standalone portable vault display on the M5StickC screen; unlock with button press, copy passwords via BLE to PC/phone without exposing them to the host OS
 
 ---
 
