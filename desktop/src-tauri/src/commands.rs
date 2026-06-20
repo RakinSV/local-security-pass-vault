@@ -369,16 +369,124 @@ pub async fn validate_seed_phrase(phrase: String) -> bool {
 
 /// Exports the vault to an encrypted backup file (v2 format, `.vbk`).
 /// The vault must be unlocked. `seed_phrase` must be the 24-word BIP-39 mnemonic.
+/// A timestamped copy is also saved to app_data_dir/backups/ (last 7 retained).
 #[tauri::command]
 pub async fn export_backup(
+    app: tauri::AppHandle,
     state: State<'_, AppState>,
     backup_path: String,
     seed_phrase: String,
 ) -> Result<(), AppError> {
-    let guard = state.vault.lock().map_err(|_| AppError::LockPoisoned)?;
-    let vault = guard.as_ref().ok_or(AppError::VaultLocked)?;
-    vault.export_backup(std::path::Path::new(&backup_path), &seed_phrase)?;
+    {
+        let guard = state.vault.lock().map_err(|_| AppError::LockPoisoned)?;
+        let vault = guard.as_ref().ok_or(AppError::VaultLocked)?;
+        vault.export_backup(std::path::Path::new(&backup_path), &seed_phrase)?;
+    }
+    // Non-fatal: save a timestamped copy and rotate (keep 7 newest)
+    let _ = auto_save_backup(&app, std::path::Path::new(&backup_path));
     Ok(())
+}
+
+fn auto_save_backup(app: &tauri::AppHandle, source: &std::path::Path) -> Result<(), AppError> {
+    let backups_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| AppError::Other(e.to_string()))?
+        .join("backups");
+    std::fs::create_dir_all(&backups_dir)
+        .map_err(|e| AppError::Other(e.to_string()))?;
+
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let dest = backups_dir.join(format!("lspv_{ts}.vbk"));
+    std::fs::copy(source, &dest)
+        .map_err(|e| AppError::Other(e.to_string()))?;
+
+    // Keep only the 7 newest auto-saves
+    let mut entries: Vec<_> = match std::fs::read_dir(&backups_dir) {
+        Ok(rd) => rd
+            .filter_map(|e| e.ok())
+            .filter(|e| e.path().extension().and_then(|x| x.to_str()) == Some("vbk"))
+            .collect(),
+        Err(_) => return Ok(()),
+    };
+    entries.sort_by_key(|e| e.metadata().and_then(|m| m.modified()).ok());
+    for old in entries.iter().take(entries.len().saturating_sub(7)) {
+        std::fs::remove_file(old.path()).ok();
+    }
+    Ok(())
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AutoBackupEntry {
+    pub path: String,
+    pub size_bytes: u64,
+    pub created_at: i64,
+}
+
+/// Lists auto-saved backup copies from app_data_dir/backups/, newest first.
+#[tauri::command]
+pub async fn list_auto_backups(app: tauri::AppHandle) -> Result<Vec<AutoBackupEntry>, AppError> {
+    let backups_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| AppError::Other(e.to_string()))?
+        .join("backups");
+
+    if !backups_dir.exists() {
+        return Ok(vec![]);
+    }
+
+    let mut entries: Vec<AutoBackupEntry> = match std::fs::read_dir(&backups_dir) {
+        Ok(rd) => rd
+            .filter_map(|e| e.ok())
+            .filter(|e| e.path().extension().and_then(|x| x.to_str()) == Some("vbk"))
+            .filter_map(|e| {
+                let meta = e.metadata().ok()?;
+                let created_at = meta
+                    .modified()
+                    .ok()
+                    .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                    .map(|d| d.as_secs() as i64)
+                    .unwrap_or(0);
+                Some(AutoBackupEntry {
+                    path: e.path().to_string_lossy().into_owned(),
+                    size_bytes: meta.len(),
+                    created_at,
+                })
+            })
+            .collect(),
+        Err(_) => vec![],
+    };
+
+    entries.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+    Ok(entries)
+}
+
+/// Opens a native file-picker dialog for selecting a .vbk backup file.
+#[tauri::command]
+pub async fn pick_backup_file() -> Option<String> {
+    rfd::AsyncFileDialog::new()
+        .set_title("Select VaultPass backup file")
+        .add_filter("VaultPass Backup", &["vbk"])
+        .pick_file()
+        .await
+        .map(|h| h.path().to_string_lossy().into_owned())
+}
+
+/// Opens a native save-file dialog for choosing a .vbk export path.
+#[tauri::command]
+pub async fn pick_backup_save_path() -> Option<String> {
+    rfd::AsyncFileDialog::new()
+        .set_title("Save backup as")
+        .add_filter("VaultPass Backup", &["vbk"])
+        .set_file_name("vault-backup.vbk")
+        .save_file()
+        .await
+        .map(|h| h.path().to_string_lossy().into_owned())
 }
 
 /// Restores a vault from a backup file (supports v1 and v2 formats).
@@ -609,4 +717,39 @@ pub async fn set_auto_lock_settings(
 pub async fn activity_ping(state: State<'_, AppState>) -> Result<(), AppError> {
     state.reset_activity();
     Ok(())
+}
+
+// ── Keychain vault status ──────────────────────────────────────────────────────
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KeychainVaultStatus {
+    pub vault_open: bool,
+    pub vault_uuid: Option<String>,
+    pub has_cached_key: bool,
+}
+
+/// Returns whether the currently-open vault has its key cached in the OS Keychain.
+/// Used by Settings UI to show quick-unlock status and allow removal.
+#[tauri::command]
+pub async fn keychain_vault_status(
+    state: State<'_, AppState>,
+) -> Result<KeychainVaultStatus, AppError> {
+    let guard = state.vault.lock().map_err(|_| AppError::LockPoisoned)?;
+    match guard.as_ref() {
+        None => Ok(KeychainVaultStatus {
+            vault_open: false,
+            vault_uuid: None,
+            has_cached_key: false,
+        }),
+        Some(vault) => {
+            let uuid = vault.vault_id_str();
+            let has_cached_key = crate::keychain::has_vault_key(&uuid);
+            Ok(KeychainVaultStatus {
+                vault_open: true,
+                vault_uuid: Some(uuid),
+                has_cached_key,
+            })
+        }
+    }
 }

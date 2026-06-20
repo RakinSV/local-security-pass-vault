@@ -15,7 +15,19 @@ import {
   bulkRetagItems,
   getAutoLockSettings,
   setAutoLockSettings,
+  generateSeedPhrase,
+  validateSeedPhrase,
+  exportBackup,
+  restoreBackup,
+  listAutoBackups,
+  pickBackupFile,
+  pickBackupSavePath,
+  keychainVaultStatus,
+  keychainDeleteKey,
+  pickFolder,
+  vaultStatus,
 } from "../api/vault";
+import type { AutoBackupEntry, KeychainVaultStatus } from "../api/vault";
 import type { BrowserConfig, ImportRow, ProfileInfo } from "../types/vault";
 
 interface Props {
@@ -23,7 +35,7 @@ interface Props {
   onImported?: () => void;
 }
 
-type Tab = "general" | "security" | "browser" | "import" | "about";
+type Tab = "general" | "security" | "backup" | "browser" | "import" | "about";
 
 export function Settings({ onBack, onImported }: Props) {
   const [tab, setTab] = useState<Tab>("general");
@@ -31,6 +43,7 @@ export function Settings({ onBack, onImported }: Props) {
   const tabs: { id: Tab; label: string }[] = [
     { id: "general",  label: "General"  },
     { id: "security", label: "Security" },
+    { id: "backup",   label: "Backup"   },
     { id: "browser",  label: "Browser"  },
     { id: "import",   label: "Import"   },
     { id: "about",    label: "About"    },
@@ -68,6 +81,7 @@ export function Settings({ onBack, onImported }: Props) {
       <div className="flex-1 overflow-y-auto">
         {tab === "general"  && <GeneralTab />}
         {tab === "security" && <SecurityTab />}
+        {tab === "backup"   && <BackupTab />}
         {tab === "browser"  && <BrowserTab />}
         {tab === "import"   && <ImportTab onImported={onImported} />}
         {tab === "about"    && <AboutTab />}
@@ -166,11 +180,15 @@ function SecurityTab() {
   const [alLoading,      setAlLoading]      = useState(true);
   const [alStatus,       setAlStatus]       = useState<{ type: "success" | "error"; msg: string } | null>(null);
 
+  const [kcStatus,    setKcStatus]    = useState<KeychainVaultStatus | null>(null);
+  const [removingKey, setRemovingKey] = useState(false);
+
   useEffect(() => {
     getAutoLockSettings()
       .then(s => { setLockSecs(s.secs); setLockOnMinimize(s.lockOnMinimize); })
       .catch(() => {})
       .finally(() => setAlLoading(false));
+    keychainVaultStatus().then(setKcStatus).catch(() => {});
   }, []);
 
   async function handleChange(e: React.FormEvent) {
@@ -188,6 +206,17 @@ function SecurityTab() {
       setPwError(msg.includes("decryption") ? "Current password is incorrect." : String(err));
     } finally {
       setPwLoading(false);
+    }
+  }
+
+  async function handleRemoveCachedKey() {
+    if (!kcStatus?.vaultUuid) return;
+    setRemovingKey(true);
+    try {
+      await keychainDeleteKey(kcStatus.vaultUuid);
+      setKcStatus(prev => prev ? { ...prev, hasCachedKey: false } : prev);
+    } catch { /* ignore */ } finally {
+      setRemovingKey(false);
     }
   }
 
@@ -256,6 +285,35 @@ function SecurityTab() {
         {alStatus && <div className="mt-2"><Alert type={alStatus.type}>{alStatus.msg}</Alert></div>}
       </div>
 
+      {/* ── OS Keychain quick unlock ── */}
+      {kcStatus?.vaultOpen && (
+        <div>
+          <h3 className="font-semibold mb-3">OS Keychain (Quick Unlock)</h3>
+          <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4 flex items-center justify-between gap-4">
+            <div>
+              <div className="font-medium text-sm">
+                {kcStatus.hasCachedKey ? "Key cached — quick unlock active" : "Key not cached"}
+              </div>
+              <div className="text-[var(--muted)] text-xs mt-0.5">
+                {kcStatus.hasCachedKey
+                  ? "Your vault key is stored in the OS keychain (DPAPI / libsecret / Keychain). Quick unlock is active."
+                  : "The vault key will be cached after the next unlock."}
+              </div>
+            </div>
+            {kcStatus.hasCachedKey && (
+              <button
+                onClick={handleRemoveCachedKey}
+                disabled={removingKey}
+                className="text-sm px-3 py-2 rounded-lg border border-[var(--danger)] text-[var(--danger)]
+                           hover:bg-red-950/20 disabled:opacity-40 transition-colors flex-shrink-0"
+              >
+                {removingKey ? "Removing…" : "Remove"}
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* ── Change master password ── */}
       <div>
         <h3 className="font-semibold mb-3">Change master password</h3>
@@ -276,6 +334,377 @@ function SecurityTab() {
         </form>
       </div>
 
+    </div>
+  );
+}
+
+// ── Backup Tab ────────────────────────────────────────────────────────────────
+
+type ExportStep = "idle" | "showPhrase" | "verifying";
+
+function BackupTab() {
+  const [vaultOpen,   setVaultOpen]   = useState(false);
+
+  // Export state machine
+  const [exportStep,    setExportStep]    = useState<ExportStep>("idle");
+  const [phrase,        setPhrase]        = useState("");
+  const [confirmed,     setConfirmed]     = useState(false);
+  const [verifyIdxs,    setVerifyIdxs]    = useState<number[]>([]);
+  const [verifyInputs,  setVerifyInputs]  = useState(["", "", ""]);
+  const [generating,    setGenerating]    = useState(false);
+  const [exporting,     setExporting]     = useState(false);
+  const [exportStatus,  setExportStatus]  = useState<{ type: "success" | "error"; msg: string } | null>(null);
+
+  // Auto-backups
+  const [autoBackups, setAutoBackups] = useState<AutoBackupEntry[]>([]);
+
+  // Restore flow
+  const [restorePhrase,   setRestorePhrase]   = useState("");
+  const [restoreFile,     setRestoreFile]     = useState<string | null>(null);
+  const [restoreDestDir,  setRestoreDestDir]  = useState<string | null>(null);
+  const [restoring,       setRestoring]       = useState(false);
+  const [restoreStatus,   setRestoreStatus]   = useState<{ type: "success" | "error"; msg: string } | null>(null);
+
+  const words = phrase.split(" ");
+  const verifyOk = verifyIdxs.length === 3 &&
+    verifyIdxs.every((idx, i) => verifyInputs[i].trim().toLowerCase() === words[idx]);
+
+  useEffect(() => {
+    vaultStatus().then(s => setVaultOpen(!s.isLocked)).catch(() => {});
+    listAutoBackups().then(setAutoBackups).catch(() => {});
+  }, []);
+
+  function refreshBackups() {
+    listAutoBackups().then(setAutoBackups).catch(() => {});
+  }
+
+  async function handleGenerate() {
+    setGenerating(true);
+    setExportStatus(null);
+    try {
+      const p = await generateSeedPhrase();
+      setPhrase(p);
+      setConfirmed(false);
+      setExportStep("showPhrase");
+    } catch (err) {
+      setExportStatus({ type: "error", msg: String(err) });
+    } finally {
+      setGenerating(false);
+    }
+  }
+
+  function handleStartVerify() {
+    const positions: number[] = [];
+    while (positions.length < 3) {
+      const n = Math.floor(Math.random() * 24);
+      if (!positions.includes(n)) positions.push(n);
+    }
+    positions.sort((a, b) => a - b);
+    setVerifyIdxs(positions);
+    setVerifyInputs(["", "", ""]);
+    setExportStep("verifying");
+  }
+
+  async function handleExport() {
+    setExporting(true);
+    setExportStatus(null);
+    try {
+      const savePath = await pickBackupSavePath();
+      if (!savePath) { setExporting(false); return; }
+      await exportBackup(savePath, phrase);
+      setPhrase("");
+      setExportStep("idle");
+      setExportStatus({ type: "success", msg: "Backup saved. A copy was also added to the auto-backups folder." });
+      refreshBackups();
+    } catch (err) {
+      setExportStatus({ type: "error", msg: String(err) });
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  async function handleRestore() {
+    if (!restoreFile || !restoreDestDir) return;
+    const ws = restorePhrase.trim().split(/\s+/);
+    if (ws.length !== 24) {
+      setRestoreStatus({ type: "error", msg: "Please enter all 24 seed phrase words." });
+      return;
+    }
+    const isValid = await validateSeedPhrase(restorePhrase.trim()).catch(() => false);
+    if (!isValid) {
+      setRestoreStatus({ type: "error", msg: "Invalid seed phrase — check that all words are valid BIP-39 words." });
+      return;
+    }
+    setRestoring(true);
+    setRestoreStatus(null);
+    try {
+      await restoreBackup(restoreFile, restoreDestDir, restorePhrase.trim());
+      setRestoreStatus({ type: "success", msg: "Vault restored. Close settings and open it from the vault picker." });
+      setRestoreFile(null);
+      setRestoreDestDir(null);
+      setRestorePhrase("");
+    } catch (err) {
+      const msg = String(err).toLowerCase();
+      setRestoreStatus({
+        type: "error",
+        msg: msg.includes("decrypt") || msg.includes("checksum")
+          ? "Incorrect seed phrase or corrupted backup file."
+          : String(err),
+      });
+    } finally {
+      setRestoring(false);
+    }
+  }
+
+  function formatDate(ts: number): string {
+    const d = new Date(ts * 1000);
+    const now = new Date();
+    const yesterday = new Date(now);
+    yesterday.setDate(now.getDate() - 1);
+    const time = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    if (d.toDateString() === now.toDateString())       return `Today ${time}`;
+    if (d.toDateString() === yesterday.toDateString()) return `Yesterday ${time}`;
+    return d.toLocaleDateString([], { month: "short", day: "numeric" }) + " " + time;
+  }
+
+  function formatSize(bytes: number): string {
+    if (bytes < 1024)          return bytes + " B";
+    if (bytes < 1024 * 1024)   return (bytes / 1024).toFixed(1) + " KB";
+    return (bytes / (1024 * 1024)).toFixed(1) + " MB";
+  }
+
+  return (
+    <div className="p-6 max-w-lg mx-auto w-full flex flex-col gap-6">
+
+      {/* ── Export ── */}
+      <div>
+        <h3 className="font-semibold mb-3">Export encrypted backup</h3>
+
+        {!vaultOpen ? (
+          <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4 text-sm text-[var(--muted)]">
+            Unlock your vault first to create a backup.
+          </div>
+
+        ) : exportStep === "idle" ? (
+          <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4 flex flex-col gap-3">
+            <p className="text-sm text-[var(--muted)] leading-relaxed">
+              Export a <strong className="text-[var(--text)]">.vbk</strong> backup encrypted
+              with a 24-word seed phrase. Even if the file leaks, it cannot be opened without
+              the phrase.
+            </p>
+            <button
+              onClick={handleGenerate}
+              disabled={generating}
+              className="w-full bg-[var(--accent)] hover:bg-[var(--accent-hover)] disabled:opacity-40
+                         text-white font-medium py-3 rounded-xl transition-colors"
+            >
+              {generating ? "Generating…" : "Generate backup phrase"}
+            </button>
+          </div>
+
+        ) : exportStep === "showPhrase" ? (
+          <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4 flex flex-col gap-4">
+            <div>
+              <div className="font-medium text-sm mb-1">Your 24-word seed phrase</div>
+              <div className="text-xs text-[var(--muted)]">
+                Write these words on paper and store them safely. VaultPass never saves
+                this phrase to disk.
+              </div>
+            </div>
+            {/* 4 × 6 word grid */}
+            <div className="grid grid-cols-4 gap-1.5 bg-black/10 rounded-xl p-3 select-all">
+              {words.map((w, i) => (
+                <div key={i} className="flex items-center gap-1 text-xs">
+                  <span className="text-[var(--muted)] w-5 text-right flex-shrink-0 font-mono tabular-nums">
+                    {i + 1}.
+                  </span>
+                  <span className="text-[var(--text)] font-mono font-medium">{w}</span>
+                </div>
+              ))}
+            </div>
+            <label className="flex items-center gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={confirmed}
+                onChange={e => setConfirmed(e.target.checked)}
+                className="w-4 h-4 accent-[var(--accent)]"
+              />
+              <span className="text-sm text-[var(--muted)]">
+                I have written these words on paper and stored them safely.
+              </span>
+            </label>
+            <div className="flex gap-2">
+              <button
+                onClick={handleStartVerify}
+                disabled={!confirmed}
+                className="flex-1 py-2.5 rounded-xl text-sm font-medium border transition-colors
+                           border-[var(--accent)] text-[var(--accent)] hover:bg-[var(--accent)]/10
+                           disabled:opacity-40 disabled:pointer-events-none"
+              >
+                Verify words
+              </button>
+              <button
+                onClick={handleExport}
+                disabled={!confirmed || exporting}
+                className="flex-1 bg-[var(--accent)] hover:bg-[var(--accent-hover)] disabled:opacity-40
+                           text-white font-medium py-2.5 rounded-xl text-sm transition-colors"
+              >
+                {exporting ? "Saving…" : "Skip & export"}
+              </button>
+            </div>
+            <button
+              onClick={() => { setPhrase(""); setExportStep("idle"); }}
+              className="text-xs text-[var(--muted)] hover:text-[var(--text)] self-center transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
+
+        ) : (
+          /* verifying step */
+          <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4 flex flex-col gap-4">
+            <div>
+              <div className="font-medium text-sm mb-1">Verify your seed phrase</div>
+              <div className="text-xs text-[var(--muted)]">
+                Enter words #{verifyIdxs.map(i => i + 1).join(", ")} from your written list.
+              </div>
+            </div>
+            <div className="flex flex-col gap-2">
+              {verifyIdxs.map((wordIdx, i) => (
+                <div key={wordIdx} className="flex items-center gap-3">
+                  <span className="text-xs text-[var(--muted)] w-14 flex-shrink-0 font-mono">
+                    Word #{wordIdx + 1}
+                  </span>
+                  <input
+                    type="text"
+                    value={verifyInputs[i]}
+                    onChange={e => {
+                      const next = [...verifyInputs];
+                      next[i] = e.target.value;
+                      setVerifyInputs(next);
+                    }}
+                    placeholder="…"
+                    className={`flex-1 bg-[var(--bg)] border rounded-lg px-3 py-2 text-sm
+                                font-mono text-[var(--text)] placeholder-[var(--muted)]
+                                focus:outline-none transition-colors ${
+                      verifyInputs[i].trim()
+                        ? verifyInputs[i].trim().toLowerCase() === words[wordIdx]
+                          ? "border-[var(--success)]"
+                          : "border-[var(--danger)]"
+                        : "border-[var(--border)] focus:border-[var(--accent)]"
+                    }`}
+                  />
+                </div>
+              ))}
+            </div>
+            <button
+              onClick={handleExport}
+              disabled={!verifyOk || exporting}
+              className="w-full bg-[var(--accent)] hover:bg-[var(--accent-hover)] disabled:opacity-40
+                         text-white font-medium py-3 rounded-xl transition-colors"
+            >
+              {exporting ? "Saving…" : "Verify & export"}
+            </button>
+            <button
+              onClick={() => setExportStep("showPhrase")}
+              className="text-xs text-[var(--muted)] hover:text-[var(--text)] self-center transition-colors"
+            >
+              ← Back
+            </button>
+          </div>
+        )}
+
+        {exportStatus && (
+          <div className="mt-2">
+            <Alert type={exportStatus.type}>{exportStatus.msg}</Alert>
+          </div>
+        )}
+      </div>
+
+      {/* ── Auto-saved copies ── */}
+      {autoBackups.length > 0 && (
+        <div>
+          <h3 className="font-semibold mb-3">Auto-saved copies</h3>
+          <div className="rounded-xl border border-[var(--border)] overflow-hidden divide-y divide-[var(--border)]">
+            {autoBackups.map((b, i) => {
+              const filename = b.path.replace(/\\/g, "/").split("/").pop() ?? b.path;
+              return (
+                <div key={i} className="flex items-center gap-3 px-4 py-2.5 bg-[var(--surface)]">
+                  <div className="flex-1 min-w-0">
+                    <div className="text-xs font-mono text-[var(--text)] truncate">{filename}</div>
+                    <div className="text-xs text-[var(--muted)] mt-0.5">{formatSize(b.sizeBytes)}</div>
+                  </div>
+                  <div className="text-xs text-[var(--muted)] flex-shrink-0">{formatDate(b.createdAt)}</div>
+                </div>
+              );
+            })}
+          </div>
+          <div className="text-xs text-[var(--muted)] mt-1.5">
+            Last 7 copies are kept automatically.
+          </div>
+        </div>
+      )}
+
+      {/* ── Restore ── */}
+      <div className="border-t border-[var(--border)] pt-4">
+        <h3 className="font-semibold mb-3">Restore from backup</h3>
+        <div className="flex flex-col gap-3">
+          <p className="text-xs text-[var(--muted)] leading-relaxed">
+            The restored vault will be created in the chosen folder.
+            Open it from the vault picker afterward.
+          </p>
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-medium text-[var(--muted)] uppercase tracking-wide">
+              24-word seed phrase
+            </label>
+            <textarea
+              value={restorePhrase}
+              onChange={e => setRestorePhrase(e.target.value)}
+              rows={3}
+              placeholder="word1 word2 word3 … word24"
+              className="w-full bg-[var(--bg)] border border-[var(--border)] rounded-xl px-3 py-2
+                         text-sm font-mono text-[var(--text)] placeholder-[var(--muted)]
+                         focus:outline-none focus:border-[var(--accent)] transition-colors resize-none"
+            />
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={() => pickBackupFile().then(p => p && setRestoreFile(p)).catch(() => {})}
+              className="flex-1 border border-[var(--border)] rounded-xl px-3 py-2 text-sm
+                         text-[var(--muted)] hover:text-[var(--text)] hover:border-[var(--accent)]
+                         transition-colors text-left truncate"
+            >
+              {restoreFile
+                ? `📄 ${restoreFile.replace(/\\/g, "/").split("/").pop()}`
+                : "📄 Choose .vbk file…"}
+            </button>
+            <button
+              onClick={() => pickFolder().then(p => p && setRestoreDestDir(p)).catch(() => {})}
+              className="flex-1 border border-[var(--border)] rounded-xl px-3 py-2 text-sm
+                         text-[var(--muted)] hover:text-[var(--text)] hover:border-[var(--accent)]
+                         transition-colors text-left truncate"
+            >
+              {restoreDestDir
+                ? `📁 ${restoreDestDir.replace(/\\/g, "/").split("/").pop()}`
+                : "📁 Choose destination…"}
+            </button>
+          </div>
+          <button
+            onClick={handleRestore}
+            disabled={
+              restoring ||
+              !restoreFile ||
+              !restoreDestDir ||
+              restorePhrase.trim().split(/\s+/).length !== 24
+            }
+            className="w-full bg-amber-700/80 hover:bg-amber-700 disabled:opacity-40
+                       text-white font-medium py-3 rounded-xl transition-colors"
+          >
+            {restoring ? "Restoring…" : "Restore vault"}
+          </button>
+          {restoreStatus && <Alert type={restoreStatus.type}>{restoreStatus.msg}</Alert>}
+        </div>
+      </div>
     </div>
   );
 }

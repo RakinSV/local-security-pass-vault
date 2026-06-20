@@ -15,6 +15,14 @@ use tauri::{
     Emitter, Manager,
 };
 
+/// Disables core dumps and ptrace on Linux to prevent memory forensics attacks.
+fn harden_process() {
+    #[cfg(target_os = "linux")]
+    unsafe {
+        libc::prctl(libc::PR_SET_DUMPABLE, 0, 0, 0, 0);
+    }
+}
+
 /// Locks the vault (if open) and emits `vault-locked` to the frontend.
 fn lock_vault_internal(app: &tauri::AppHandle) {
     // `let x = ...; x` forces the match temporary to drop at `;` before `state` drops.
@@ -37,6 +45,7 @@ fn lock_vault_internal(app: &tauri::AppHandle) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    harden_process();
     core_vault::init().expect("libsodium init failed");
 
     tauri::Builder::default()
@@ -194,6 +203,10 @@ pub fn run() {
             commands::get_auto_lock_settings,
             commands::set_auto_lock_settings,
             commands::activity_ping,
+            commands::keychain_vault_status,
+            commands::list_auto_backups,
+            commands::pick_backup_file,
+            commands::pick_backup_save_path,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -117,3 +117,34 @@ export const setAutoLockSettings = (secs: number, lockOnMinimize: boolean) =>
 
 export const activityPing = () =>
   invoke<void>("activity_ping");
+
+// ── Keychain vault status ─────────────────────────────────────────────────────
+
+export interface KeychainVaultStatus {
+  vaultOpen: boolean;
+  vaultUuid: string | null;
+  hasCachedKey: boolean;
+}
+
+export const keychainVaultStatus = () =>
+  invoke<KeychainVaultStatus>("keychain_vault_status");
+
+export const keychainDeleteKey = (vaultUuid: string) =>
+  invoke<void>("keychain_delete_key", { vaultUuid });
+
+// ── Auto-backup list ──────────────────────────────────────────────────────────
+
+export interface AutoBackupEntry {
+  path: string;
+  sizeBytes: number;
+  createdAt: number;
+}
+
+export const listAutoBackups = () =>
+  invoke<AutoBackupEntry[]>("list_auto_backups");
+
+export const pickBackupFile = () =>
+  invoke<string | null>("pick_backup_file");
+
+export const pickBackupSavePath = () =>
+  invoke<string | null>("pick_backup_save_path");

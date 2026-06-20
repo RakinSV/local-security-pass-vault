@@ -70,9 +70,15 @@ jobs:
           cache-dependency-path: |
             extension/package-lock.json
             desktop/package-lock.json
-      - name: Check extension
+      - name: Check extension (TypeScript)
         working-directory: extension
         run: npm ci && npx tsc --noEmit
+      - name: Build extension
+        working-directory: extension
+        run: npm run build
+      - name: Extension integrity check (SRI)
+        working-directory: extension
+        run: node scripts/sri-check.js
       - name: Check desktop
         working-directory: desktop
         run: npm ci && npx tsc --noEmit
