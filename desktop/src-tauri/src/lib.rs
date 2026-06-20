@@ -135,6 +135,8 @@ pub fn run() {
             commands::get_native_host_path,
             commands::parse_import_csv,
             commands::import_items_from_csv,
+            commands::list_source_tags,
+            commands::bulk_retag_items,
             commands::get_profiles,
             commands::set_profile_name,
             commands::generate_seed_phrase,

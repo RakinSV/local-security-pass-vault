@@ -1,4 +1,4 @@
-export type ItemType = "login" | "card" | "note" | "identity" | "ssh_key";
+export type ItemType = "login" | "card" | "note" | "identity" | "ssh_key" | "server";
 
 export interface CustomField {
   label: string;
@@ -56,12 +56,27 @@ export interface SshKeyPayload {
   notes: string | null;
 }
 
+export interface ServerPayload {
+  type: "server";
+  host: string;
+  port: number | null;
+  username: string | null;
+  /** "password" | "ssh_key" | "token" */
+  auth_type: string;
+  password: string | null;
+  ssh_private_key: string | null;
+  ssh_passphrase: string | null;
+  token: string | null;
+  notes: string | null;
+}
+
 export type ItemPayload =
   | LoginPayload
   | CardPayload
   | NotePayload
   | IdentityPayload
-  | SshKeyPayload;
+  | SshKeyPayload
+  | ServerPayload;
 
 export interface ItemSummary {
   id: string;
@@ -70,6 +85,7 @@ export interface ItemSummary {
   folderId: string | null;
   favorite: boolean;
   updatedAt: number;
+  sourceTag: string | null;
 }
 
 export interface Item extends ItemSummary {

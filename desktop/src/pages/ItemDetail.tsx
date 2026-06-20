@@ -210,6 +210,47 @@ export function ItemDetail({ itemId, onBack, onEdit, onDeleted }: Props) {
           </>
         )}
 
+        {p.type === "server" && (
+          <>
+            <Field label="Host" value={p.host} />
+            {p.port != null && <Field label="Port" value={String(p.port)} />}
+            {p.username && <Field label="Username" value={p.username} />}
+            <div className="flex flex-col gap-1">
+              <div className="text-xs font-medium text-[var(--muted)] uppercase tracking-wide">Auth type</div>
+              <div className="text-sm text-[var(--text)]">
+                {p.auth_type === "password" ? "Password" : p.auth_type === "ssh_key" ? "SSH Key" : "Token / API key"}
+              </div>
+            </div>
+            {p.auth_type === "password" && p.password && <Field label="Password" value={p.password} secret />}
+            {p.auth_type === "ssh_key" && p.ssh_private_key && (
+              <div className="flex flex-col gap-1">
+                <div className="text-xs font-medium text-[var(--muted)] uppercase tracking-wide">Private Key</div>
+                <textarea
+                  readOnly
+                  value={p.ssh_private_key}
+                  rows={6}
+                  className="w-full bg-[var(--bg)] border border-[var(--border)] rounded-lg px-3 py-2
+                             text-xs text-[var(--text)] font-mono resize-none focus:outline-none"
+                />
+                <CopyBtn value={p.ssh_private_key} />
+              </div>
+            )}
+            {p.auth_type === "ssh_key" && p.ssh_passphrase && <Field label="Key passphrase" value={p.ssh_passphrase} secret />}
+            {p.auth_type === "token" && p.token && <Field label="Token / API key" value={p.token} secret />}
+            {p.notes && <Field label="Notes" value={p.notes} />}
+          </>
+        )}
+
+        {/* Source tag badge */}
+        {item.sourceTag && (
+          <div className="flex items-center gap-2 pt-1">
+            <div className="text-xs font-medium text-[var(--muted)] uppercase tracking-wide">Source</div>
+            <span className="text-xs px-2 py-0.5 rounded-full bg-[var(--accent)]/15 text-[var(--accent)] border border-[var(--accent)]/30">
+              {item.sourceTag}
+            </span>
+          </div>
+        )}
+
         <div className="text-xs text-[var(--muted)] pt-2 border-t border-[var(--border)]">
           Updated: {new Date(item.updatedAt * 1000).toLocaleString()}
         </div>

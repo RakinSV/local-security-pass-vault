@@ -1,4 +1,4 @@
-//! DDL схемы v1. Точно соответствует `.claude/rules/vault-schema.md`.
+//! DDL схемы. Схема v2 — current.
 
 /// Полная схема vault (таблицы + индексы). Применяется к пустой in-memory БД.
 pub const SCHEMA_V1: &str = r#"
@@ -25,7 +25,8 @@ CREATE TABLE items (
     created_at          INTEGER NOT NULL,
     updated_at          INTEGER NOT NULL,
     lamport_clock       INTEGER NOT NULL DEFAULT 0,
-    deleted             INTEGER NOT NULL DEFAULT 0
+    deleted             INTEGER NOT NULL DEFAULT 0,
+    source_tag          TEXT
 );
 
 CREATE INDEX idx_items_type     ON items(item_type) WHERE deleted = 0;
@@ -33,6 +34,7 @@ CREATE INDEX idx_items_folder   ON items(folder_id) WHERE deleted = 0;
 CREATE INDEX idx_items_updated  ON items(updated_at DESC);
 CREATE INDEX idx_items_search   ON items(title_search_hash) WHERE deleted = 0;
 CREATE INDEX idx_items_favorite ON items(favorite) WHERE favorite = 1 AND deleted = 0;
+CREATE INDEX idx_items_source   ON items(source_tag) WHERE deleted = 0 AND source_tag IS NOT NULL;
 
 CREATE TABLE folders (
     id              TEXT NOT NULL PRIMARY KEY,
@@ -42,4 +44,10 @@ CREATE TABLE folders (
     icon            TEXT,
     created_at      INTEGER NOT NULL
 );
+"#;
+
+/// Миграция V1→V2: добавить source_tag + индекс (idempotent через IF NOT EXISTS).
+pub const MIGRATE_V1_TO_V2: &str = r#"
+ALTER TABLE items ADD COLUMN source_tag TEXT;
+CREATE INDEX IF NOT EXISTS idx_items_source ON items(source_tag) WHERE deleted = 0 AND source_tag IS NOT NULL;
 "#;

@@ -758,7 +758,7 @@ dependencies = [
 
 [[package]]
 name = "core-vault"
-version = "0.1.0"
+version = "0.1.9"
 dependencies = [
  "bip39",
  "blake3",
@@ -5008,7 +5008,7 @@ dependencies = [
 
 [[package]]
 name = "vaultpass-native-host"
-version = "0.1.0"
+version = "0.1.9"
 
 [[package]]
 name = "vcpkg"

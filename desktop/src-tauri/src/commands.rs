@@ -23,6 +23,7 @@ pub struct ItemSummaryDto {
     pub folder_id: Option<String>,
     pub favorite: bool,
     pub updated_at: i64,
+    pub source_tag: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -36,6 +37,7 @@ pub struct ItemDto {
     pub favorite: bool,
     pub created_at: i64,
     pub updated_at: i64,
+    pub source_tag: Option<String>,
 }
 
 // ── Commands ──────────────────────────────────────────────────────────────────
@@ -119,6 +121,7 @@ pub async fn list_items(state: State<'_, AppState>) -> Result<Vec<ItemSummaryDto
             folder_id: i.folder_id.map(|u| u.to_string()),
             favorite: i.favorite,
             updated_at: i.updated_at,
+            source_tag: i.source_tag,
         })
         .collect())
 }
@@ -139,6 +142,7 @@ pub async fn get_item(state: State<'_, AppState>, id: String) -> Result<ItemDto,
         favorite: item.favorite,
         created_at: item.created_at,
         updated_at: item.updated_at,
+        source_tag: item.source_tag,
     })
 }
 
@@ -149,6 +153,7 @@ pub async fn create_item(
     payload: serde_json::Value,
     folder_id: Option<String>,
     favorite: bool,
+    source_tag: Option<String>,
 ) -> Result<String, AppError> {
     let mut guard = state.vault.lock().map_err(|_| AppError::LockPoisoned)?;
     let vault = guard.as_mut().ok_or(AppError::VaultLocked)?;
@@ -156,7 +161,7 @@ pub async fn create_item(
     let folder_uuid = folder_id
         .map(|s| Uuid::parse_str(&s))
         .transpose()?;
-    let id = vault.add_item(&title, payload, folder_uuid, favorite)?;
+    let id = vault.add_item(&title, payload, folder_uuid, favorite, source_tag)?;
     vault.save()?;
     Ok(id.to_string())
 }
@@ -169,6 +174,7 @@ pub async fn update_item(
     payload: serde_json::Value,
     folder_id: Option<String>,
     favorite: bool,
+    source_tag: Option<String>,
 ) -> Result<(), AppError> {
     let mut guard = state.vault.lock().map_err(|_| AppError::LockPoisoned)?;
     let vault = guard.as_mut().ok_or(AppError::VaultLocked)?;
@@ -178,6 +184,7 @@ pub async fn update_item(
     item.payload = serde_json::from_value(payload)?;
     item.folder_id = folder_id.map(|s| Uuid::parse_str(&s)).transpose()?;
     item.favorite = favorite;
+    item.source_tag = source_tag;
     vault.update_item(item)?;
     vault.save()?;
     Ok(())
@@ -299,6 +306,7 @@ pub async fn parse_import_csv(
 pub async fn import_items_from_csv(
     state: State<'_, AppState>,
     items: Vec<crate::csv_import::ImportRow>,
+    source_tag: Option<String>,
 ) -> Result<usize, AppError> {
     let mut guard = state.vault.lock().map_err(|_| AppError::LockPoisoned)?;
     let vault = guard.as_mut().ok_or(AppError::VaultLocked)?;
@@ -314,12 +322,32 @@ pub async fn import_items_from_csv(
             custom_fields: vec![],
             password_history: vec![],
         };
-        vault.add_item(&row.title, payload, None, false)?;
+        vault.add_item(&row.title, payload, None, false, source_tag.clone())?;
     }
     if count > 0 {
         vault.save()?;
     }
     Ok(count)
+}
+
+/// Returns all distinct non-null source_tag values from live items.
+#[tauri::command]
+pub async fn list_source_tags(state: State<'_, AppState>) -> Result<Vec<String>, AppError> {
+    let guard = state.vault.lock().map_err(|_| AppError::LockPoisoned)?;
+    let vault = guard.as_ref().ok_or(AppError::VaultLocked)?;
+    Ok(vault.list_source_tags()?)
+}
+
+/// Renames (or clears) a source_tag across all live items with that tag.
+#[tauri::command]
+pub async fn bulk_retag_items(
+    state: State<'_, AppState>,
+    old_tag: String,
+    new_tag: Option<String>,
+) -> Result<usize, AppError> {
+    let mut guard = state.vault.lock().map_err(|_| AppError::LockPoisoned)?;
+    let vault = guard.as_mut().ok_or(AppError::VaultLocked)?;
+    Ok(vault.update_source_tag_bulk(&old_tag, new_tag.as_deref())?)
 }
 
 // ── Backup (BIP-39 + BLAKE3, ADR-003) ─────────────────────────────────────────

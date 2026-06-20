@@ -1,19 +1,21 @@
 import type { ItemSummary, ItemType } from "../types/vault";
 
 const TYPE_ICON: Record<ItemType, string> = {
-  login: "🔑",
-  card: "💳",
-  note: "📄",
+  login:    "🔑",
+  card:     "💳",
+  note:     "📄",
   identity: "👤",
-  ssh_key: "🖥",
+  ssh_key:  "🖥",
+  server:   "🖧",
 };
 
 const TYPE_LABEL: Record<ItemType, string> = {
-  login: "Login",
-  card: "Card",
-  note: "Secure Note",
+  login:    "Login",
+  card:     "Card",
+  note:     "Secure Note",
   identity: "Identity",
-  ssh_key: "SSH Key",
+  ssh_key:  "SSH Key",
+  server:   "Server",
 };
 
 interface Props {
@@ -33,7 +35,14 @@ export function ItemCard({ item, onClick }: Props) {
       </span>
       <div className="flex-1 min-w-0">
         <div className="font-medium text-[var(--text)] truncate">{item.title}</div>
-        <div className="text-xs text-[var(--muted)]">{TYPE_LABEL[item.itemType]}</div>
+        <div className="text-xs text-[var(--muted)] flex items-center gap-1.5">
+          {TYPE_LABEL[item.itemType]}
+          {item.sourceTag && (
+            <span className="text-[10px] px-1.5 py-0 rounded-full bg-[var(--accent)]/10 text-[var(--accent)]/70 border border-[var(--accent)]/20">
+              {item.sourceTag}
+            </span>
+          )}
+        </div>
       </div>
       {item.favorite && (
         <span className="text-yellow-400 text-xs flex-shrink-0">★</span>

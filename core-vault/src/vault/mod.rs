@@ -217,6 +217,7 @@ impl Vault {
         payload: crate::models::ItemPayload,
         folder_id: Option<Uuid>,
         favorite: bool,
+        source_tag: Option<String>,
     ) -> Result<Uuid> {
         let id = Uuid::new_v4();
         let now = now_unix();
@@ -232,6 +233,7 @@ impl Vault {
             updated_at: now,
             lamport_clock: lamport,
             deleted: false,
+            source_tag,
         };
         let row = self.item_to_row(&item)?;
         self.db.upsert_item(&row)?;
@@ -278,6 +280,20 @@ impl Vault {
     pub fn delete_item(&mut self, id: &Uuid) -> Result<()> {
         let lamport = self.next_lamport();
         self.db.soft_delete_item(id, now_unix(), lamport as i64)
+    }
+
+    /// Все уникальные source_tag живых записей, отсортированные алфавитно.
+    pub fn list_source_tags(&self) -> Result<Vec<String>> {
+        self.db.list_source_tags()
+    }
+
+    /// Переименовывает или очищает source_tag у всех записей с данным тегом.
+    pub fn update_source_tag_bulk(&mut self, old_tag: &str, new_tag: Option<&str>) -> Result<usize> {
+        let n = self.db.update_source_tag_bulk(old_tag, new_tag)?;
+        if n > 0 {
+            self.save()?;
+        }
+        Ok(n)
     }
 
     // ── Папки ──────────────────────────────────────────────────────────────────
@@ -401,6 +417,7 @@ impl Vault {
             updated_at: item.updated_at,
             lamport_clock: item.lamport_clock as i64,
             deleted: item.deleted,
+            source_tag: item.source_tag.clone(),
         })
     }
 
@@ -431,6 +448,7 @@ impl Vault {
             updated_at: row.updated_at,
             lamport_clock: row.lamport_clock.max(0) as u64,
             deleted: row.deleted,
+            source_tag: row.source_tag.clone(),
         })
     }
 }

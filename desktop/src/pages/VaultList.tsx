@@ -4,12 +4,13 @@ import { listItems, lockVault } from "../api/vault";
 import type { ItemSummary, ItemType } from "../types/vault";
 
 const FILTERS: { label: string; value: ItemType | "all" }[] = [
-  { label: "All",          value: "all"      },
-  { label: "🔑 Logins",   value: "login"    },
-  { label: "💳 Cards",    value: "card"     },
-  { label: "📄 Notes",    value: "note"     },
-  { label: "👤 Identities",value: "identity"},
-  { label: "🖥 SSH Keys", value: "ssh_key"  },
+  { label: "All",           value: "all"      },
+  { label: "🔑 Logins",    value: "login"    },
+  { label: "💳 Cards",     value: "card"     },
+  { label: "📄 Notes",     value: "note"     },
+  { label: "👤 Identities", value: "identity"},
+  { label: "🖥 SSH Keys",  value: "ssh_key"  },
+  { label: "🖧 Servers",   value: "server"   },
 ];
 
 interface Props {
@@ -22,10 +23,11 @@ interface Props {
 }
 
 export function VaultList({ onSelectItem, onAddItem, onLocked, onSwitchVault, onSettings, refreshKey }: Props) {
-  const [items, setItems]       = useState<ItemSummary[]>([]);
-  const [query, setQuery]       = useState("");
-  const [filter, setFilter]     = useState<ItemType | "all">("all");
-  const [loading, setLoading]   = useState(true);
+  const [items, setItems]         = useState<ItemSummary[]>([]);
+  const [query, setQuery]         = useState("");
+  const [filter, setFilter]       = useState<ItemType | "all">("all");
+  const [tagFilter, setTagFilter] = useState<string | null>(null);
+  const [loading, setLoading]     = useState(true);
   const [loadError, setLoadError] = useState("");
 
   useEffect(() => {
@@ -37,15 +39,22 @@ export function VaultList({ onSelectItem, onAddItem, onLocked, onSwitchVault, on
       .finally(() => setLoading(false));
   }, [refreshKey]);
 
+  const sourceTags = useMemo(() => {
+    const set = new Set<string>();
+    items.forEach(i => { if (i.sourceTag) set.add(i.sourceTag); });
+    return [...set].sort();
+  }, [items]);
+
   const displayed = useMemo(() => {
     let result = items;
     if (filter !== "all") result = result.filter(i => i.itemType === filter);
+    if (tagFilter) result = result.filter(i => i.sourceTag === tagFilter);
     if (query.trim()) {
       const q = query.toLowerCase();
       result = result.filter(i => i.title.toLowerCase().includes(q));
     }
     return result.sort((a, b) => b.updatedAt - a.updatedAt);
-  }, [items, filter, query]);
+  }, [items, filter, tagFilter, query]);
 
   async function handleLock() {
     await lockVault();
@@ -61,13 +70,13 @@ export function VaultList({ onSelectItem, onAddItem, onLocked, onSwitchVault, on
           <div className="text-[10px] text-[var(--muted)] leading-tight">Local Security Pass Vault</div>
         </div>
 
-        <nav className="flex-1 px-2">
+        <nav className="flex-1 px-2 overflow-y-auto flex flex-col gap-0.5">
           {FILTERS.map(f => (
             <button
               key={f.value}
-              onClick={() => setFilter(f.value)}
-              className={`w-full text-left px-3 py-2 rounded-lg text-sm mb-0.5 transition-colors
-                ${filter === f.value
+              onClick={() => { setFilter(f.value); setTagFilter(null); }}
+              className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors
+                ${filter === f.value && !tagFilter
                   ? "bg-[var(--accent)]/20 text-[var(--accent)]"
                   : "text-[var(--muted)] hover:text-[var(--text)] hover:bg-[var(--surface)]"
                 }`}
@@ -75,6 +84,27 @@ export function VaultList({ onSelectItem, onAddItem, onLocked, onSwitchVault, on
               {f.label}
             </button>
           ))}
+
+          {sourceTags.length > 0 && (
+            <div className="mt-3 mb-1">
+              <div className="text-[10px] font-semibold text-[var(--muted)] uppercase tracking-wider px-3 mb-1">
+                Sources
+              </div>
+              {sourceTags.map(tag => (
+                <button
+                  key={tag}
+                  onClick={() => { setTagFilter(tag === tagFilter ? null : tag); setFilter("all"); }}
+                  className={`w-full text-left px-3 py-1.5 rounded-lg text-xs transition-colors truncate
+                    ${tagFilter === tag
+                      ? "bg-[var(--accent)]/20 text-[var(--accent)]"
+                      : "text-[var(--muted)] hover:text-[var(--text)] hover:bg-[var(--surface)]"
+                    }`}
+                >
+                  # {tag}
+                </button>
+              ))}
+            </div>
+          )}
         </nav>
 
         <div className="px-2 pt-2 border-t border-[var(--border)] flex flex-col gap-1">

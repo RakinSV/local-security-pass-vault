@@ -28,6 +28,7 @@ pub enum ItemType {
     Note,
     Identity,
     SshKey,
+    Server,
 }
 
 impl ItemType {
@@ -39,11 +40,10 @@ impl ItemType {
             ItemType::Note => "note",
             ItemType::Identity => "identity",
             ItemType::SshKey => "ssh_key",
+            ItemType::Server => "server",
         }
     }
 
-    // Инхерентный хелпер: возвращает Option, а не Result как FromStr — поэтому
-    // намеренно не реализуем трейт.
     #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Option<Self> {
         match s {
@@ -52,6 +52,7 @@ impl ItemType {
             "note" => Some(ItemType::Note),
             "identity" => Some(ItemType::Identity),
             "ssh_key" => Some(ItemType::SshKey),
+            "server" => Some(ItemType::Server),
             _ => None,
         }
     }
@@ -70,6 +71,8 @@ pub struct Item {
     pub updated_at: i64,
     pub lamport_clock: u64,
     pub deleted: bool,
+    /// Метка источника: имя браузер-профиля или произвольная строка (PLAIN, опционально).
+    pub source_tag: Option<String>,
 }
 
 /// Полиморфные данные записи. Сериализуется в JSON в `payload_encrypted`.
@@ -113,6 +116,18 @@ pub enum ItemPayload {
         passphrase: Option<String>,
         notes: Option<String>,
     },
+    Server {
+        host: String,
+        port: Option<u16>,
+        username: Option<String>,
+        /// "password" | "ssh_key" | "token"
+        auth_type: String,
+        password: Option<String>,
+        ssh_private_key: Option<String>,
+        ssh_passphrase: Option<String>,
+        token: Option<String>,
+        notes: Option<String>,
+    },
 }
 
 impl ItemPayload {
@@ -124,6 +139,7 @@ impl ItemPayload {
             ItemPayload::Note { .. } => ItemType::Note,
             ItemPayload::Identity { .. } => ItemType::Identity,
             ItemPayload::SshKey { .. } => ItemType::SshKey,
+            ItemPayload::Server { .. } => ItemType::Server,
         }
     }
 }

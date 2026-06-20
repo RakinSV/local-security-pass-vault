@@ -32,18 +32,20 @@ export const createItem = (
   title: string,
   payload: ItemPayload,
   folderId: string | null,
-  favorite: boolean
+  favorite: boolean,
+  sourceTag: string | null = null,
 ) =>
-  invoke<string>("create_item", { title, payload, folderId, favorite });
+  invoke<string>("create_item", { title, payload, folderId, favorite, sourceTag });
 
 export const updateItem = (
   id: string,
   title: string,
   payload: ItemPayload,
   folderId: string | null,
-  favorite: boolean
+  favorite: boolean,
+  sourceTag: string | null = null,
 ) =>
-  invoke<void>("update_item", { id, title, payload, folderId, favorite });
+  invoke<void>("update_item", { id, title, payload, folderId, favorite, sourceTag });
 
 export const deleteItem = (id: string) =>
   invoke<void>("delete_item", { id });
@@ -63,8 +65,14 @@ export const getNativeHostPath = () =>
 export const parseImportCsv = (content: string) =>
   invoke<ImportRow[]>("parse_import_csv", { content });
 
-export const importItemsFromCsv = (items: ImportRow[]) =>
-  invoke<number>("import_items_from_csv", { items });
+export const importItemsFromCsv = (items: ImportRow[], sourceTag: string | null = null) =>
+  invoke<number>("import_items_from_csv", { items, sourceTag });
+
+export const listSourceTags = () =>
+  invoke<string[]>("list_source_tags");
+
+export const bulkRetagItems = (oldTag: string, newTag: string | null) =>
+  invoke<number>("bulk_retag_items", { oldTag, newTag });
 
 export const getProfiles = () =>
   invoke<ProfileInfo[]>("get_profiles");

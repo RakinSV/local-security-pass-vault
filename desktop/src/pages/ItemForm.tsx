@@ -4,11 +4,12 @@ import { createItem, updateItem, getItem } from "../api/vault";
 import type { ItemType, ItemPayload } from "../types/vault";
 
 const TYPES: { value: ItemType; label: string }[] = [
-  { value: "login", label: "🔑 Login" },
-  { value: "card", label: "💳 Card" },
-  { value: "note", label: "📄 Secure Note" },
-  { value: "identity", label: "👤 Identity" },
-  { value: "ssh_key", label: "🖥 SSH Key" },
+  { value: "login",    label: "🔑 Login"       },
+  { value: "card",     label: "💳 Card"         },
+  { value: "note",     label: "📄 Secure Note"  },
+  { value: "identity", label: "👤 Identity"     },
+  { value: "ssh_key",  label: "🖥 SSH Key"      },
+  { value: "server",   label: "🖧 Server"       },
 ];
 
 function emptyPayload(type: ItemType): ItemPayload {
@@ -23,6 +24,8 @@ function emptyPayload(type: ItemType): ItemPayload {
       return { type: "identity", first_name: null, last_name: null, email: null, phone: null, address: null, passport: null, notes: null };
     case "ssh_key":
       return { type: "ssh_key", private_key: "", public_key: null, passphrase: null, notes: null };
+    case "server":
+      return { type: "server", host: "", port: null, username: null, auth_type: "password", password: null, ssh_private_key: null, ssh_passphrase: null, token: null, notes: null };
   }
 }
 
@@ -38,6 +41,7 @@ export function ItemForm({ editId, defaultType = "login", onSaved, onBack }: Pro
   const [title, setTitle] = useState("");
   const [payload, setPayload] = useState<ItemPayload>(emptyPayload(defaultType));
   const [favorite, setFavorite] = useState(false);
+  const [sourceTag, setSourceTag] = useState<string>("");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(!!editId);
@@ -51,6 +55,7 @@ export function ItemForm({ editId, defaultType = "login", onSaved, onBack }: Pro
         setItemType(item.itemType);
         setPayload(item.payload);
         setFavorite(item.favorite);
+        setSourceTag(item.sourceTag ?? "");
       })
       .catch(err => setError(String(err)))
       .finally(() => setLoading(false));
@@ -71,12 +76,13 @@ export function ItemForm({ editId, defaultType = "login", onSaved, onBack }: Pro
     if (!title.trim()) { setError("Title is required."); return; }
 
     setSaving(true);
+    const tag = sourceTag.trim() || null;
     try {
       if (editId) {
-        await updateItem(editId, title, payload, null, favorite);
+        await updateItem(editId, title, payload, null, favorite, tag);
         onSaved(editId);
       } else {
-        const id = await createItem(title, payload, null, favorite);
+        const id = await createItem(title, payload, null, favorite, tag);
         onSaved(id);
       }
     } catch (err) {
@@ -260,6 +266,95 @@ export function ItemForm({ editId, defaultType = "login", onSaved, onBack }: Pro
               <TextareaField label="Notes (optional)" value={p.notes ?? ""} onChange={v => setField("notes", v || null)} />
             </>
           )}
+
+          {/* Server / Infrastructure fields */}
+          {p.type === "server" && (
+            <>
+              <div className="grid grid-cols-3 gap-3">
+                <div className="col-span-2">
+                  <TextField label="Host / IP" value={p.host} onChange={v => setField("host", v)} placeholder="192.168.1.1 or server.example.com" />
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs font-medium text-[var(--muted)] uppercase tracking-wide">Port</label>
+                  <input
+                    type="number"
+                    min={1} max={65535}
+                    value={p.port ?? ""}
+                    onChange={e => setField("port", e.target.value ? parseInt(e.target.value) : null)}
+                    placeholder="22"
+                    className="w-full bg-[var(--bg)] border border-[var(--border)] rounded-lg px-3 py-2
+                               text-sm text-[var(--text)] placeholder-[var(--muted)]
+                               focus:outline-none focus:border-[var(--accent)] transition-colors"
+                  />
+                </div>
+              </div>
+              <TextField label="Username (optional)" value={p.username ?? ""} onChange={v => setField("username", v || null)} placeholder="root, admin…" />
+
+              {/* Auth type selector */}
+              <div className="flex flex-col gap-1">
+                <label className="text-xs font-medium text-[var(--muted)] uppercase tracking-wide">Auth type</label>
+                <div className="flex gap-2">
+                  {(["password", "ssh_key", "token"] as const).map(at => (
+                    <button
+                      key={at}
+                      type="button"
+                      onClick={() => setField("auth_type", at)}
+                      className={`px-3 py-1.5 rounded-lg text-sm transition-colors border
+                        ${p.auth_type === at
+                          ? "bg-[var(--accent)]/20 border-[var(--accent)] text-[var(--accent)]"
+                          : "border-[var(--border)] text-[var(--muted)] hover:text-[var(--text)]"
+                        }`}
+                    >
+                      {at === "password" ? "Password" : at === "ssh_key" ? "SSH Key" : "Token / API key"}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Progressive disclosure by auth type */}
+              {p.auth_type === "password" && (
+                <PasswordField label="Password" value={p.password ?? ""} onChange={v => setField("password", v || null)} />
+              )}
+              {p.auth_type === "ssh_key" && (
+                <>
+                  <div className="flex flex-col gap-1">
+                    <label className="text-xs font-medium text-[var(--muted)] uppercase tracking-wide">Private key (PEM)</label>
+                    <textarea
+                      value={p.ssh_private_key ?? ""}
+                      onChange={e => setField("ssh_private_key", e.target.value || null)}
+                      rows={6}
+                      placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"
+                      className="w-full bg-[var(--bg)] border border-[var(--border)] rounded-lg px-3 py-2
+                                 text-xs text-[var(--text)] placeholder-[var(--muted)] font-mono resize-none
+                                 focus:outline-none focus:border-[var(--accent)] transition-colors"
+                    />
+                  </div>
+                  <PasswordField label="Key passphrase (optional)" value={p.ssh_passphrase ?? ""} onChange={v => setField("ssh_passphrase", v || null)} />
+                </>
+              )}
+              {p.auth_type === "token" && (
+                <PasswordField label="Token / API key" value={p.token ?? ""} onChange={v => setField("token", v || null)} placeholder="eyJ… or glpat-…" />
+              )}
+
+              <TextareaField label="Notes (optional)" value={p.notes ?? ""} onChange={v => setField("notes", v || null)} />
+            </>
+          )}
+
+          {/* Source tag — optional label for all item types */}
+          <div className="flex flex-col gap-1 pt-1 border-t border-[var(--border)]/40 mt-1">
+            <label className="text-xs font-medium text-[var(--muted)] uppercase tracking-wide">
+              Source / Profile tag (optional)
+            </label>
+            <input
+              type="text"
+              value={sourceTag}
+              onChange={e => setSourceTag(e.target.value)}
+              placeholder="e.g. Work Chrome, Personal Firefox"
+              className="w-full bg-[var(--bg)] border border-[var(--border)] rounded-lg px-3 py-2
+                         text-sm text-[var(--text)] placeholder-[var(--muted)]
+                         focus:outline-none focus:border-[var(--accent)] transition-colors"
+            />
+          </div>
 
           {error && (
             <div className="text-[var(--danger)] text-sm bg-red-950/30 border border-red-900/40 rounded-lg px-3 py-2">

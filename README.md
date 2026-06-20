@@ -49,7 +49,8 @@ LSPV takes a different approach: **the vault never leaves your machine.** No clo
 - **Multi-vault** — separate encrypted databases for work, personal, family
 - **Browser extension** — auto-fill for Chrome, Edge, and Firefox via native messaging
 - **Auto-fill** — domain-matched suggestions using eTLD+1 comparison (no subdomain confusion)
-- **5 item types** — Login, Card, Note, Identity, SSH Key
+- **6 item types** — Login, Card, Note, Identity, SSH Key, Server (with SSH/password/token auth)
+- **Source tagging** — import label tracks which browser profile or export a record came from; filterable in sidebar
 - **CSV import** — from Chrome and Firefox password exports
 - **BIP-39 backup** — 24-word mnemonic encrypts a portable `.vbk` backup file
 - **OS Keychain** — quick unlock using DPAPI / Keychain / libsecret after first password entry

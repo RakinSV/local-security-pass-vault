@@ -24,6 +24,7 @@ pub struct ItemRow {
     pub updated_at: i64,
     pub lamport_clock: i64,
     pub deleted: bool,
+    pub source_tag: Option<String>,
 }
 
 /// Сырая строка таблицы `folders`.
@@ -65,13 +66,30 @@ impl Db {
         let owned = owned_from_slice(bytes)?;
         // read_only = false → БД resizeable, можно писать.
         conn.deserialize(DatabaseName::Main, owned, false)?;
-        Ok(Db { conn })
+        let db = Db { conn };
+        db.run_migrations()?;
+        Ok(db)
     }
 
     /// Сериализует БД в байты для последующего шифрования и записи на диск.
     pub fn to_plaintext(&self) -> Result<Vec<u8>> {
         let data = self.conn.serialize(DatabaseName::Main)?;
         Ok(data.to_vec())
+    }
+
+    // ── migrations ───────────────────────────────────────────────────────────
+
+    /// Идемпотентные миграции: добавляет колонки, отсутствующие в старых vault-файлах.
+    fn run_migrations(&self) -> Result<()> {
+        let has_source_tag: i64 = self.conn.query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('items') WHERE name = 'source_tag'",
+            [],
+            |r| r.get(0),
+        ).unwrap_or(0);
+        if has_source_tag == 0 {
+            self.conn.execute_batch(schema::MIGRATE_V1_TO_V2)?;
+        }
+        Ok(())
     }
 
     // ── vault header ─────────────────────────────────────────────────────────
@@ -124,8 +142,8 @@ impl Db {
             "INSERT INTO items
                 (id, item_type, title_encrypted, title_search_hash, payload_encrypted,
                  payload_nonce, folder_id, favorite, created_at, updated_at,
-                 lamport_clock, deleted)
-             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12)
+                 lamport_clock, deleted, source_tag)
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13)
              ON CONFLICT(id) DO UPDATE SET
                 item_type=excluded.item_type,
                 title_encrypted=excluded.title_encrypted,
@@ -136,7 +154,8 @@ impl Db {
                 favorite=excluded.favorite,
                 updated_at=excluded.updated_at,
                 lamport_clock=excluded.lamport_clock,
-                deleted=excluded.deleted",
+                deleted=excluded.deleted,
+                source_tag=excluded.source_tag",
             params![
                 row.id.to_string(),
                 row.item_type,
@@ -150,6 +169,7 @@ impl Db {
                 row.updated_at,
                 row.lamport_clock,
                 row.deleted as i64,
+                row.source_tag,
             ],
         )?;
         Ok(())
@@ -160,7 +180,7 @@ impl Db {
             .query_row(
                 "SELECT id, item_type, title_encrypted, title_search_hash, payload_encrypted,
                         payload_nonce, folder_id, favorite, created_at, updated_at,
-                        lamport_clock, deleted
+                        lamport_clock, deleted, source_tag
                  FROM items WHERE id = ?1",
                 params![id.to_string()],
                 map_item_row,
@@ -174,7 +194,7 @@ impl Db {
         let mut stmt = self.conn.prepare(
             "SELECT id, item_type, title_encrypted, title_search_hash, payload_encrypted,
                     payload_nonce, folder_id, favorite, created_at, updated_at,
-                    lamport_clock, deleted
+                    lamport_clock, deleted, source_tag
              FROM items WHERE deleted = 0 ORDER BY updated_at DESC",
         )?;
         let rows = stmt.query_map([], map_item_row)?;
@@ -190,7 +210,7 @@ impl Db {
         let mut stmt = self.conn.prepare(
             "SELECT id, item_type, title_encrypted, title_search_hash, payload_encrypted,
                     payload_nonce, folder_id, favorite, created_at, updated_at,
-                    lamport_clock, deleted
+                    lamport_clock, deleted, source_tag
              FROM items WHERE title_search_hash = ?1 AND deleted = 0",
         )?;
         let rows = stmt.query_map(params![hash], map_item_row)?;
@@ -199,6 +219,28 @@ impl Db {
             out.push(r?);
         }
         Ok(out)
+    }
+
+    /// Все уникальные non-null source_tag живых записей.
+    pub fn list_source_tags(&self) -> Result<Vec<String>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT DISTINCT source_tag FROM items WHERE deleted = 0 AND source_tag IS NOT NULL ORDER BY source_tag",
+        )?;
+        let rows = stmt.query_map([], |r| r.get::<_, String>(0))?;
+        let mut out = Vec::new();
+        for r in rows {
+            out.push(r?);
+        }
+        Ok(out)
+    }
+
+    /// Переименовывает (или очищает) source_tag у всех записей с указанным тегом.
+    pub fn update_source_tag_bulk(&self, old_tag: &str, new_tag: Option<&str>) -> Result<usize> {
+        let n = self.conn.execute(
+            "UPDATE items SET source_tag = ?2 WHERE source_tag = ?1 AND deleted = 0",
+            params![old_tag, new_tag],
+        )?;
+        Ok(n)
     }
 
     /// Мягкое удаление (deleted = 1). Физически не удаляет (см. vault-schema.md).
@@ -281,6 +323,7 @@ fn map_item_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<ItemRow> {
         updated_at: r.get(9)?,
         lamport_clock: r.get(10)?,
         deleted: r.get::<_, i64>(11)? != 0,
+        source_tag: r.get(12)?,
     })
 }
 
@@ -337,6 +380,7 @@ mod tests {
             updated_at: 1000,
             lamport_clock: 1,
             deleted: false,
+            source_tag: None,
         }
     }
 

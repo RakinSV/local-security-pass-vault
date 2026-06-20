@@ -12,6 +12,7 @@ import {
   openGithub,
   getAutostart,
   setAutostart as setAutostartCmd,
+  bulkRetagItems,
 } from "../api/vault";
 import type { BrowserConfig, ImportRow, ProfileInfo } from "../types/vault";
 
@@ -376,10 +377,17 @@ function IdSection({ label, hint, defaultValue, ids, input, onInputChange, onAdd
 
 function ImportTab({ onImported }: { onImported?: () => void }) {
   const fileRef = useRef<HTMLInputElement>(null);
-  const [rows,   setRows]   = useState<ImportRow[]>([]);
-  const [error,  setError]  = useState("");
-  const [importing, setImporting] = useState(false);
+  const [rows,         setRows]         = useState<ImportRow[]>([]);
+  const [error,        setError]        = useState("");
+  const [importing,    setImporting]    = useState(false);
   const [importedCount, setImportedCount] = useState<number | null>(null);
+  const [profiles,     setProfiles]     = useState<ProfileInfo[]>([]);
+  const [sourceTag,    setSourceTag]    = useState<string>("");
+  const [retag,        setRetag]        = useState<{ old: string; new: string } | null>(null);
+
+  useEffect(() => {
+    getProfiles().then(setProfiles).catch(() => {});
+  }, []);
 
   async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -398,7 +406,8 @@ function ImportTab({ onImported }: { onImported?: () => void }) {
   async function handleImport() {
     setImporting(true); setError("");
     try {
-      const count = await importItemsFromCsv(rows);
+      const tag = sourceTag.trim() || null;
+      const count = await importItemsFromCsv(rows, tag);
       setImportedCount(count);
       setRows([]);
       onImported?.();
@@ -406,6 +415,18 @@ function ImportTab({ onImported }: { onImported?: () => void }) {
       setError(String(err));
     } finally {
       setImporting(false);
+    }
+  }
+
+  async function handleRetag() {
+    if (!retag || !retag.old.trim()) return;
+    try {
+      const n = await bulkRetagItems(retag.old.trim(), retag.new.trim() || null);
+      setRetag(null);
+      onImported?.();
+      alert(`Updated ${n} item${n !== 1 ? "s" : ""}.`);
+    } catch (err) {
+      setError(String(err));
     }
   }
 
@@ -442,7 +463,7 @@ function ImportTab({ onImported }: { onImported?: () => void }) {
       {rows.length > 0 && (
         <>
           <div className="text-sm text-[var(--muted)]">{rows.length} items found:</div>
-          <div className="border border-[var(--border)] rounded-xl overflow-hidden max-h-72 overflow-y-auto">
+          <div className="border border-[var(--border)] rounded-xl overflow-hidden max-h-60 overflow-y-auto">
             <table className="w-full text-xs">
               <thead className="sticky top-0 bg-[var(--surface)] border-b border-[var(--border)]">
                 <tr>
@@ -463,16 +484,110 @@ function ImportTab({ onImported }: { onImported?: () => void }) {
             </table>
           </div>
 
+          {/* Source tag for this import batch */}
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-medium text-[var(--muted)] uppercase tracking-wide">
+              Tag these imports as (optional)
+            </label>
+            {profiles.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {profiles.map(p => {
+                  const label = p.name || p.email || p.id.slice(0, 8);
+                  return (
+                    <button
+                      key={p.id}
+                      type="button"
+                      onClick={() => setSourceTag(tag => tag === label ? "" : label)}
+                      className={`px-2.5 py-1 rounded-full text-xs border transition-colors
+                        ${sourceTag === label
+                          ? "bg-[var(--accent)]/20 border-[var(--accent)] text-[var(--accent)]"
+                          : "border-[var(--border)] text-[var(--muted)] hover:text-[var(--text)]"
+                        }`}
+                    >
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+            <input
+              type="text"
+              value={sourceTag}
+              onChange={e => setSourceTag(e.target.value)}
+              placeholder="or type a custom label…"
+              className="w-full bg-[var(--bg)] border border-[var(--border)] rounded-lg px-3 py-2
+                         text-sm text-[var(--text)] placeholder-[var(--muted)]
+                         focus:outline-none focus:border-[var(--accent)] transition-colors"
+            />
+          </div>
+
           <button
             onClick={handleImport}
             disabled={importing}
             className="w-full bg-[var(--accent)] hover:bg-[var(--accent-hover)] disabled:opacity-40
                        text-white font-medium py-3 rounded-xl transition-colors"
           >
-            {importing ? "Importing…" : `Import ${rows.length} item${rows.length !== 1 ? "s" : ""}`}
+            {importing ? "Importing…" : `Import ${rows.length} item${rows.length !== 1 ? "s" : ""}${sourceTag.trim() ? ` → "${sourceTag.trim()}"` : ""}`}
           </button>
         </>
       )}
+
+      {/* Bulk retag section */}
+      <div className="border-t border-[var(--border)] pt-4 flex flex-col gap-3">
+        <h4 className="font-medium text-sm">Bulk re-tag</h4>
+        <p className="text-xs text-[var(--muted)]">
+          Rename or remove a source tag from all items at once.
+        </p>
+        {retag === null ? (
+          <button
+            type="button"
+            onClick={() => setRetag({ old: "", new: "" })}
+            className="text-sm text-[var(--accent)] hover:underline self-start"
+          >
+            + Rename or clear a tag…
+          </button>
+        ) : (
+          <div className="flex flex-col gap-2">
+            <input
+              type="text"
+              value={retag.old}
+              onChange={e => setRetag(r => r ? { ...r, old: e.target.value } : r)}
+              placeholder="Existing tag to rename"
+              className="w-full bg-[var(--bg)] border border-[var(--border)] rounded-lg px-3 py-2
+                         text-sm text-[var(--text)] placeholder-[var(--muted)]
+                         focus:outline-none focus:border-[var(--accent)] transition-colors"
+            />
+            <input
+              type="text"
+              value={retag.new}
+              onChange={e => setRetag(r => r ? { ...r, new: e.target.value } : r)}
+              placeholder="New tag name (leave empty to clear)"
+              className="w-full bg-[var(--bg)] border border-[var(--border)] rounded-lg px-3 py-2
+                         text-sm text-[var(--text)] placeholder-[var(--muted)]
+                         focus:outline-none focus:border-[var(--accent)] transition-colors"
+            />
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setRetag(null)}
+                className="flex-1 border border-[var(--border)] text-[var(--muted)]
+                           hover:text-[var(--text)] py-2 rounded-xl text-sm transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleRetag}
+                disabled={!retag.old.trim()}
+                className="flex-1 bg-[var(--accent)] hover:bg-[var(--accent-hover)] disabled:opacity-40
+                           text-white font-medium py-2 rounded-xl text-sm transition-colors"
+              >
+                Apply
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
