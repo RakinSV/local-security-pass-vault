@@ -27,24 +27,27 @@ lspv_backup_YYYY-MM-DD_XXXXXXXX.vbk
 
 ## Export a Backup
 
-> Backup UI is on the roadmap for v0.3. Currently available via the Rust API.
+Go to **Settings → Backup**:
 
-```rust
-vault.export_backup(
-    Path::new("/path/to/backup.vbk"),
-    &seed_phrase,  // your 24-word mnemonic
-)?;
-```
+1. Click **Generate Phrase** — LSPV generates 24 BIP-39 words
+2. Write them on paper. LSPV never saves the mnemonic to disk.
+3. Tick **"I have written these words on paper"**
+4. Optional: click **Verify** to spot-check 3 random words (recommended)
+5. Click **Export .vbk** → choose your save location
+
+A timestamped auto-copy is also saved to `app_data/backups/lspv_{timestamp}.vbk`.  
+The 7 most recent auto-copies are kept automatically.
 
 ## Restore from Backup
 
-```rust
-Vault::restore_from_backup(
-    Path::new("/path/to/backup.vbk"),
-    Path::new("/destination/directory"),
-    &seed_phrase,
-)?;
-```
+Go to **Settings → Backup → Restore**:
+
+1. Paste your 24-word mnemonic phrase (space-separated)
+2. Click **Choose .vbk file** → select the backup file
+3. Click **Choose destination folder** → where the restored vault will be placed
+4. Click **Restore**
+
+LSPV validates the BIP-39 phrase before attempting decryption, then verifies the BLAKE3 integrity checksum after decryption. A tampered or corrupted file is rejected before any data is written.
 
 LSPV verifies the BLAKE3 checksum inside the ciphertext after decryption. If the file was corrupted or tampered with, restoration fails with an integrity error — it will not silently restore a broken vault.
 
@@ -52,7 +55,7 @@ LSPV verifies the BLAKE3 checksum inside the ciphertext after decryption. If the
 
 | Copy | Location | Notes |
 |------|----------|-------|
-| 1 | Local drive | Automatic on each vault change (roadmap v0.3) |
+| 1 | Local drive | Auto-saved on each manual export (7 copies, `app_data/backups/`) |
 | 2 | USB flash drive | Offline copy, update weekly |
 | 3 | Second computer or NAS | LAN-accessible, no cloud |
 

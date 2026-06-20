@@ -64,7 +64,7 @@ Click **+** in the vault list or use **Add item** to create:
 
 After unlocking with your master password, LSPV stores the vault key in the OS Keychain. On the next unlock, you can use Windows Hello (PIN/fingerprint) or macOS Touch ID instead of typing your full password.
 
-To disable quick unlock: **Settings → Security → Keychain** (coming in v0.3).
+To remove the cached key: **Settings → Security → OS Keychain → Remove**.
 
 ## Next Steps
 

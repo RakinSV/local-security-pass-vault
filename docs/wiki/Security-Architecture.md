@@ -5,6 +5,60 @@
 
 ---
 
+## Implementation Status by Level (v0.3.1)
+
+### Level 1 — Cryptographic Core
+
+| Property | Status | Details |
+|----------|--------|---------|
+| Argon2id KDF (m=256MB, t=4, p=4) | ✅ | `core-vault/src/crypto/` — RFC 9106 compliant |
+| XChaCha20-Poly1305 AEAD | ✅ | Envelope encryption + per-record with unique nonce |
+| Constant-time MAC comparison | ✅ | `sodium_memcmp()` for all hash/MAC checks |
+| Memory safety (mlock + zeroize) | ✅ | `sodium_mlock()` + `sodium_memzero()` on lock |
+| OS Keychain (DPAPI / libsecret) | ✅ | `keyring = "2"` crate |
+| Auto-lock idle timer | ✅ | Configurable timeout + lock-on-minimize |
+| Keychain status UI | ✅ | Settings → Security → OS Keychain: status + Remove button |
+
+### Level 1 — Storage Hardening
+
+| Property | Status | Details |
+|----------|--------|---------|
+| SQLCipher AES-256 per page | ✅ | `rusqlite` + `sqlcipher` feature |
+| Atomic write (tmp → fsync → rename) | ✅ | Never writes directly to `vault.db` |
+| Symlink rejection (O_NOFOLLOW) | ✅ | `lstat()` check before open |
+| Honeypot ransomware detection | ✅ | Hash verified on every unlock |
+| Process hardening (PR_SET_DUMPABLE=0) | ✅ | `harden_process()` — first call in `run()` on Linux |
+
+### Level 2 — Browser Extension
+
+| Property | Status | Details |
+|----------|--------|---------|
+| MV3 manifest, zero network requests | ✅ | `connect-src 'none'` in CSP |
+| Ed25519 mutual IPC authentication | ✅ | Desktop signs every response; extension verifies |
+| eTLD+1 domain matching | ✅ | `tldts` library — subdomain spoofing prevented |
+| CSP + SRI integrity check in CI | ✅ | `extension/scripts/sri-check.js` in `security.yml` |
+
+### Level 3 — Encrypted Backups
+
+| Property | Status | Details |
+|----------|--------|---------|
+| BIP-39 24-word mnemonic (256 bit) | ✅ | `bip39 = "2"` crate |
+| Backup export UI (4×6 grid + verify) | ✅ | Settings → Backup tab |
+| Argon2id backup KDF (4 GB, 10 iter) | ✅ | `core-vault/src/backup/` |
+| .vbk + BLAKE3 integrity check | ✅ | Checksum verified on restore |
+| Auto-rotation — 7 most recent copies | ✅ | `auto_save_backup()` on each manual export |
+
+### Threat Model (STRIDE/PASTA)
+
+| Attack | Mitigation |
+|--------|-----------|
+| DLL/SO hijacking | libsodium statically linked — zero external DLL surface |
+| GPU VRAM residue (LeftoverLocals) | `sodium_mlock` + `PR_SET_DUMPABLE=0` |
+| Supply chain (XZ-utils style) | `cargo-audit` in CI; minimal dependency count |
+| Windows Cloud Clipboard | `CF_EXCLUDEFROMCLOUDCLIPBOARD` |
+
+---
+
 ## The 8-Layer Model
 
 ```
