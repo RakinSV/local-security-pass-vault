@@ -136,7 +136,6 @@ export default function App() {
       <Settings
         onBack={() => setPage({ name: "vault" })}
         onImported={refresh}
-        onVaultLocked={() => setPage({ name: "picker" })}
       />
     );
   }

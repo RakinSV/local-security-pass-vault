@@ -19,7 +19,6 @@ import type { BrowserConfig, ImportRow, ProfileInfo } from "../types/vault";
 interface Props {
   onBack: () => void;
   onImported?: () => void;
-  onVaultLocked?: () => void;
 }
 
 type Tab = "general" | "security" | "browser" | "import" | "about";
