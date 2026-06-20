@@ -78,7 +78,7 @@ jobs:
         run: npm run build
       - name: Extension integrity check (SRI)
         working-directory: extension
-        run: node scripts/sri-check.js
+        run: node scripts/sri-check.cjs
       - name: Check desktop
         working-directory: desktop
         run: npm ci && npx tsc --noEmit

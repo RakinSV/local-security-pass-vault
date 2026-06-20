@@ -135,18 +135,19 @@ jobs:
         run: |
           TAG="${{ github.ref_name }}"
           REPO="${{ github.repository }}"
-          # Upload artifacts to the release (create if it doesn't exist yet)
-          if gh release view "$TAG" --repo "$REPO" &>/dev/null; then
-            echo "Release $TAG exists — uploading artifacts"
-            find artifacts -type f | while read f; do
-              gh release upload "$TAG" "$f" --repo "$REPO" --clobber || true
-            done
-          else
+          # Create release if it doesn't exist yet
+          if ! gh release view "$TAG" --repo "$REPO" &>/dev/null; then
             echo "Creating release $TAG"
             gh release create "$TAG" \
               --repo "$REPO" \
               --title "LSPV $TAG" \
               --generate-notes \
-              --prerelease \
-              $(find artifacts -type f | tr '\n' ' ')
+              --prerelease
+          else
+            echo "Release $TAG already exists"
           fi
+          # Upload each artifact individually — handles filenames with spaces
+          while IFS= read -r -d '' f; do
+            echo "Uploading: $f"
+            gh release upload "$TAG" "$f" --repo "$REPO" --clobber
+          done < <(find artifacts -type f -print0)
