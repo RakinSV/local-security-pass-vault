@@ -13,6 +13,8 @@ import {
   getAutostart,
   setAutostart as setAutostartCmd,
   bulkRetagItems,
+  getAutoLockSettings,
+  setAutoLockSettings,
 } from "../api/vault";
 import type { BrowserConfig, ImportRow, ProfileInfo } from "../types/vault";
 
@@ -142,52 +144,138 @@ function GeneralTab() {
 
 // ── Security Tab ──────────────────────────────────────────────────────────────
 
+const LOCK_TIMEOUT_OPTIONS: { label: string; secs: number }[] = [
+  { label: "Never",   secs: 0    },
+  { label: "1 min",   secs: 60   },
+  { label: "5 min",   secs: 300  },
+  { label: "15 min",  secs: 900  },
+  { label: "30 min",  secs: 1800 },
+  { label: "1 hour",  secs: 3600 },
+];
+
 function SecurityTab() {
   const [oldPw,     setOldPw]     = useState("");
   const [newPw,     setNewPw]     = useState("");
   const [confirmPw, setConfirmPw] = useState("");
-  const [error,   setError]   = useState("");
-  const [success, setSuccess] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const [pwError,   setPwError]   = useState("");
+  const [pwSuccess, setPwSuccess] = useState(false);
+  const [pwLoading, setPwLoading] = useState(false);
+
+  const [lockSecs,       setLockSecs]       = useState(300);
+  const [lockOnMinimize, setLockOnMinimize] = useState(false);
+  const [alLoading,      setAlLoading]      = useState(true);
+  const [alStatus,       setAlStatus]       = useState<{ type: "success" | "error"; msg: string } | null>(null);
+
+  useEffect(() => {
+    getAutoLockSettings()
+      .then(s => { setLockSecs(s.secs); setLockOnMinimize(s.lockOnMinimize); })
+      .catch(() => {})
+      .finally(() => setAlLoading(false));
+  }, []);
 
   async function handleChange(e: React.FormEvent) {
     e.preventDefault();
-    setError(""); setSuccess(false);
-    if (newPw.length < 8)     { setError("New password must be at least 8 characters."); return; }
-    if (newPw !== confirmPw)  { setError("Passwords do not match."); return; }
-    setLoading(true);
+    setPwError(""); setPwSuccess(false);
+    if (newPw.length < 8)    { setPwError("New password must be at least 8 characters."); return; }
+    if (newPw !== confirmPw) { setPwError("Passwords do not match."); return; }
+    setPwLoading(true);
     try {
       await changeMasterPassword(oldPw, newPw);
-      setSuccess(true);
+      setPwSuccess(true);
       setOldPw(""); setNewPw(""); setConfirmPw("");
     } catch (err) {
       const msg = String(err).toLowerCase();
-      setError(msg.includes("decryption")
-        ? "Current password is incorrect."
-        : String(err));
+      setPwError(msg.includes("decryption") ? "Current password is incorrect." : String(err));
     } finally {
-      setLoading(false);
+      setPwLoading(false);
+    }
+  }
+
+  async function saveAutoLock(secs: number, lom: boolean) {
+    setAlStatus(null);
+    try {
+      await setAutoLockSettings(secs, lom);
+      setAlStatus({ type: "success", msg: secs === 0 ? "Auto-lock disabled." : `Auto-lock set to ${LOCK_TIMEOUT_OPTIONS.find(o => o.secs === secs)?.label ?? secs + "s"}.` });
+    } catch (err) {
+      setAlStatus({ type: "error", msg: String(err) });
     }
   }
 
   return (
-    <div className="p-6 max-w-md mx-auto w-full">
-      <h3 className="font-semibold mb-4">Change master password</h3>
-      <form onSubmit={handleChange} className="flex flex-col gap-4">
-        <PasswordField label="Current password"     value={oldPw}     onChange={setOldPw}     autoFocus />
-        <PasswordField label="New password"         value={newPw}     onChange={setNewPw}     placeholder="At least 8 characters" />
-        <PasswordField label="Confirm new password" value={confirmPw} onChange={setConfirmPw} />
-        {error   && <Alert type="error">{error}</Alert>}
-        {success && <Alert type="success">Password changed successfully.</Alert>}
-        <button
-          type="submit"
-          disabled={loading || !oldPw || !newPw || !confirmPw}
-          className="w-full bg-[var(--accent)] hover:bg-[var(--accent-hover)] disabled:opacity-40
-                     text-white font-medium py-3 rounded-xl transition-colors"
-        >
-          {loading ? "Changing…" : "Change password"}
-        </button>
-      </form>
+    <div className="p-6 max-w-md mx-auto w-full flex flex-col gap-6">
+
+      {/* ── Auto-lock ── */}
+      <div>
+        <h3 className="font-semibold mb-3">Auto-lock</h3>
+
+        {/* Timeout selector */}
+        <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4 flex flex-col gap-3">
+          <div>
+            <div className="font-medium text-sm">Lock vault after idle</div>
+            <div className="text-[var(--muted)] text-xs mt-0.5">
+              Vault locks automatically when there is no activity.
+            </div>
+          </div>
+          <div className="grid grid-cols-3 gap-1.5">
+            {LOCK_TIMEOUT_OPTIONS.map(opt => (
+              <button
+                key={opt.secs}
+                disabled={alLoading}
+                onClick={async () => { setLockSecs(opt.secs); await saveAutoLock(opt.secs, lockOnMinimize); }}
+                className={`py-2 rounded-lg text-sm font-medium border transition-colors ${
+                  lockSecs === opt.secs
+                    ? "bg-[var(--accent)] text-white border-[var(--accent)]"
+                    : "border-[var(--border)] text-[var(--muted)] hover:text-[var(--text)] hover:border-[var(--accent)]"
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Lock on minimize */}
+          <div className="flex items-center justify-between gap-4 pt-1 border-t border-[var(--border)]">
+            <div>
+              <div className="font-medium text-sm">Lock when hidden</div>
+              <div className="text-[var(--muted)] text-xs mt-0.5">
+                Lock vault whenever the window is closed to tray.
+              </div>
+            </div>
+            <button
+              disabled={alLoading}
+              onClick={async () => { const next = !lockOnMinimize; setLockOnMinimize(next); await saveAutoLock(lockSecs, next); }}
+              className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 ${
+                lockOnMinimize ? "bg-[var(--accent)]" : "bg-[var(--border)]"
+              }`}
+            >
+              <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow-sm
+                                transition-transform ${lockOnMinimize ? "translate-x-5" : "translate-x-0"}`} />
+            </button>
+          </div>
+        </div>
+        {alStatus && <div className="mt-2"><Alert type={alStatus.type}>{alStatus.msg}</Alert></div>}
+      </div>
+
+      {/* ── Change master password ── */}
+      <div>
+        <h3 className="font-semibold mb-3">Change master password</h3>
+        <form onSubmit={handleChange} className="flex flex-col gap-4">
+          <PasswordField label="Current password"     value={oldPw}     onChange={setOldPw}     autoFocus />
+          <PasswordField label="New password"         value={newPw}     onChange={setNewPw}     placeholder="At least 8 characters" />
+          <PasswordField label="Confirm new password" value={confirmPw} onChange={setConfirmPw} />
+          {pwError   && <Alert type="error">{pwError}</Alert>}
+          {pwSuccess && <Alert type="success">Password changed successfully.</Alert>}
+          <button
+            type="submit"
+            disabled={pwLoading || !oldPw || !newPw || !confirmPw}
+            className="w-full bg-[var(--accent)] hover:bg-[var(--accent-hover)] disabled:opacity-40
+                       text-white font-medium py-3 rounded-xl transition-colors"
+          >
+            {pwLoading ? "Changing…" : "Change password"}
+          </button>
+        </form>
+      </div>
+
     </div>
   );
 }

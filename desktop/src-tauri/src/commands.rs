@@ -1,8 +1,9 @@
 use crate::error::AppError;
 use crate::state::AppState;
 use core_vault::models::ItemPayload;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
+use std::sync::atomic::Ordering;
 use tauri::{Manager, State};
 use uuid::Uuid;
 
@@ -91,6 +92,7 @@ pub async fn open_vault(
 
     let mut guard = state.vault.lock().map_err(|_| AppError::LockPoisoned)?;
     *guard = Some(vault);
+    state.reset_activity();
     let mut dir_guard = state.vault_dir.lock().map_err(|_| AppError::LockPoisoned)?;
     *dir_guard = Some(dir);
     Ok(())
@@ -569,4 +571,42 @@ fn get_autostart_impl() -> bool { false }
 #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
 fn set_autostart_impl(_enable: bool) -> Result<(), AppError> {
     Err(AppError::Other("Autostart not supported on this platform".into()))
+}
+
+// ── Auto-lock ──────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AutoLockSettings {
+    pub secs: u64,
+    pub lock_on_minimize: bool,
+}
+
+/// Returns the current auto-lock settings.
+#[tauri::command]
+pub async fn get_auto_lock_settings(state: State<'_, AppState>) -> Result<AutoLockSettings, AppError> {
+    Ok(AutoLockSettings {
+        secs: state.auto_lock_secs.load(Ordering::Relaxed),
+        lock_on_minimize: state.lock_on_minimize.load(Ordering::Relaxed),
+    })
+}
+
+/// Updates the auto-lock timeout and lock-on-minimize flag.
+/// `secs = 0` disables auto-lock.
+#[tauri::command]
+pub async fn set_auto_lock_settings(
+    state: State<'_, AppState>,
+    secs: u64,
+    lock_on_minimize: bool,
+) -> Result<(), AppError> {
+    state.auto_lock_secs.store(secs, Ordering::Relaxed);
+    state.lock_on_minimize.store(lock_on_minimize, Ordering::Relaxed);
+    Ok(())
+}
+
+/// Called by the frontend on user interaction to reset the idle timer.
+#[tauri::command]
+pub async fn activity_ping(state: State<'_, AppState>) -> Result<(), AppError> {
+    state.reset_activity();
+    Ok(())
 }

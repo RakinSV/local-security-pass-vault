@@ -8,11 +8,32 @@ mod pipe_server;
 mod profile_registry;
 mod state;
 
+use std::time::Duration;
 use tauri::{
     menu::{MenuBuilder, MenuItemBuilder, PredefinedMenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     Emitter, Manager,
 };
+
+/// Locks the vault (if open) and emits `vault-locked` to the frontend.
+fn lock_vault_internal(app: &tauri::AppHandle) {
+    // `let x = ...; x` forces the match temporary to drop at `;` before `state` drops.
+    let vault_id: Option<String> = {
+        let state = app.state::<state::AppState>();
+        let x = match state.vault.lock() {
+            Ok(mut guard) => {
+                let id = guard.as_ref().map(|v| v.vault_id_str());
+                *guard = None;
+                id
+            }
+            Err(_) => None,
+        }; x
+    };
+    if let Some(id) = vault_id {
+        keychain::delete_vault_key(&id);
+        app.emit("vault-locked", ()).ok();
+    }
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -42,6 +63,21 @@ pub fn run() {
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 pipe_server::run(handle).await;
+            });
+
+            // ── Auto-lock idle checker (every 30 s) ───────────────────────────
+            let handle_al = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                loop {
+                    tokio::time::sleep(Duration::from_secs(30)).await;
+                    let state = handle_al.state::<state::AppState>();
+                    let timeout = state.auto_lock_secs();
+                    if timeout == 0 { continue; }
+                    let is_open = state.vault.lock().map(|g| g.is_some()).unwrap_or(false);
+                    if is_open && state.idle_secs() >= timeout {
+                        lock_vault_internal(&handle_al);
+                    }
+                }
             });
 
             // ── System tray ───────────────────────────────────────────────────
@@ -104,12 +140,17 @@ pub fn run() {
                     .build(app)?;
             }
 
-            // ── Close window → hide to tray ───────────────────────────────────
+            // ── Close window → hide to tray (+ optional lock) ────────────────
             if let Some(main_win) = app.get_webview_window("main") {
                 let w = main_win.clone();
+                let h = app.handle().clone();
                 main_win.on_window_event(move |event| {
                     if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                         api.prevent_close();
+                        let state = h.state::<state::AppState>();
+                        if state.lock_on_minimize() {
+                            lock_vault_internal(&h);
+                        }
                         w.hide().ok();
                     }
                 });
@@ -150,6 +191,9 @@ pub fn run() {
             commands::keychain_delete_key,
             commands::get_autostart,
             commands::set_autostart,
+            commands::get_auto_lock_settings,
+            commands::set_auto_lock_settings,
+            commands::activity_ping,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

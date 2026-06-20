@@ -19,7 +19,7 @@ serde_json  = "1"
 uuid        = { version = "1", features = ["v4"] }
 hex         = "0.4"
 csv         = "1"
-tokio                = { version = "1", features = ["net", "io-util", "rt-multi-thread"] }
+tokio                = { version = "1", features = ["net", "io-util", "rt-multi-thread", "time"] }
 libsodium-sys-stable = "1"
 core-vault           = { path = "../../core-vault" }
 keyring              = "2"

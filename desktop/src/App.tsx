@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { vaultStatus } from "./api/vault";
+import { vaultStatus, activityPing } from "./api/vault";
 import { VaultPicker } from "./pages/VaultPicker";
 import { Setup } from "./pages/Setup";
 import { Unlock } from "./pages/Unlock";
@@ -40,12 +40,30 @@ export default function App() {
     })();
   }, []);
 
-  // Tray "Lock & Hide" locks the vault from Rust and emits this event
+  // Tray "Lock & Hide" + auto-lock timer both emit this event from Rust
   useEffect(() => {
     const unlisten = listen("vault-locked", () => {
       setPage({ name: "picker" });
     });
     return () => { unlisten.then(f => f()); };
+  }, []);
+
+  // Reset the Rust-side idle timer on user interaction (throttled to once/30 s)
+  useEffect(() => {
+    let lastPing = 0;
+    const ping = () => {
+      const now = Date.now();
+      if (now - lastPing > 30_000) {
+        lastPing = now;
+        activityPing().catch(() => {});
+      }
+    };
+    window.addEventListener("mousemove", ping, { passive: true });
+    window.addEventListener("keydown", ping, { passive: true });
+    return () => {
+      window.removeEventListener("mousemove", ping);
+      window.removeEventListener("keydown", ping);
+    };
   }, []);
 
   function refresh() {
