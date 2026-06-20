@@ -31,6 +31,26 @@ Your vault never leaves your machine. No subscriptions, no accounts, no cloud, n
 
 ---
 
+## Screenshots
+
+<div align="center">
+
+| Vault List | Add Login | Password Generator |
+|:-----------:|:---------:|:-----------------:|
+| ![Vault List](docs/screenshots/06_vault_list.png) | ![Add Login](docs/screenshots/04_add_login.png) | ![Password Generator](docs/screenshots/05_password_generator.png) |
+
+| Settings — Security | Settings — Backup | Settings — Data |
+|:-------------------:|:-----------------:|:---------------:|
+| ![Security](docs/screenshots/09_settings_security.png) | ![Backup](docs/screenshots/10_settings_backup.png) | ![Data](docs/screenshots/11_settings_data.png) |
+
+| Password Health Check | Item Detail View | About |
+|:---------------------:|:----------------:|:------:|
+| ![Health](docs/screenshots/12_health_check.png) | ![Item](docs/screenshots/07_item_detail.png) | ![About](docs/screenshots/13_settings_about.png) |
+
+</div>
+
+---
+
 ## Why LSPV?
 
 Cloud password managers have a structural problem: they hold your passwords. LastPass was breached in 2022. 1Password, Bitwarden — all viable targets because they centralize what attackers want most.
@@ -39,9 +59,101 @@ LSPV takes the opposite approach. The vault never leaves your disk. There is no 
 
 ---
 
-## Security Architecture — 4 Levels
+## Features
 
-LSPV is built in four independent security layers. Each layer is designed so that a failure in one does not compromise the others.
+### Core Vault
+- **Zero cloud, zero telemetry** — no network socket ever opens from the desktop app
+- **Offline-first** — works permanently without internet
+- **Multi-vault** — separate encrypted databases for work / personal / family
+- **6 item types** — Login · Card · Note · Identity · SSH Key · Server
+- **Favorites** — star important items, filter sidebar to show only favorites
+- **Search** — instant encrypted-index search without decrypting every record
+- **Folders** — create folders in Settings → Data, filter vault list by folder in sidebar
+- **Source tagging** — import label tracks browser profile or CSV origin; filterable in sidebar
+
+### Security & Password Management
+- **Password generator** — configurable length (8–64), uppercase/lowercase/digits/symbols toggles, strength meter with entropy bits
+- **TOTP / 2FA** — store TOTP secrets, get live 6-digit codes with countdown ring; scan QR from clipboard
+- **Custom fields** — add hidden or visible custom fields to any Login entry (API keys, PINs, recovery codes)
+- **Password history** — auto-saved when you change a password; view past passwords with timestamps
+- **Password health report** — one-click scan: detects weak (<12 chars or <2 char classes), duplicate, and old (>6 months) passwords
+- **Clipboard TTL** — copied passwords auto-cleared after 30 seconds; excluded from Windows Cloud Clipboard sync
+
+### Backup & Recovery
+- **BIP-39 backup** — 24-word seed phrase (256-bit entropy); shown once, never stored on disk
+- **Encrypted .vbk files** — XChaCha20-Poly1305 + BLAKE3 checksum; brute-force infeasible even at 1000 GPUs
+- **Auto-backup rotation** — 7 most recent timestamped copies kept automatically
+- **Restore** — paste mnemonic + pick .vbk file + choose destination folder
+
+### Data Management
+- **CSV import** — from Chrome, Firefox, Bitwarden, and 1Password exports
+- **CSV export** — Chrome/Firefox-compatible format (name, url, username, password, note)
+- **Trash bin** — soft-deleted items go to trash; restore or permanently purge individually or all at once
+- **Folder management** — create/delete folders from Settings → Data tab
+
+### Browser Extension
+- **Auto-fill** — eTLD+1 domain matching, fills via native setter (not tracked by browser history)
+- **Chrome, Edge, Firefox** — local native messaging, no WebSocket, no cloud relay
+- **Ed25519 IPC signing** — every native message is signed; extension verifies before acting
+- **Zero network** — `connect-src 'none'` CSP; extension cannot phone home
+
+### OS Integration
+- **OS Keychain quick-unlock** — Windows DPAPI / macOS Keychain / libsecret (no master password reentry)
+- **Auto-lock** — configurable idle timer (1 min / 5 min / 15 min / 30 min / 1 hour / Never)
+- **Lock on minimize** — optional; vault key zeroed from memory on window minimize
+- **System tray** — minimize to tray, left-click to toggle, right-click for Lock/Quit
+- **Autostart** — optional launch at system login
+
+---
+
+## LSPV vs Other Password Managers
+
+| Feature | **LSPV** | Bitwarden | 1Password | LastPass | KeePass | Dashlane | NordPass | Keeper |
+|---------|:--------:|:---------:|:---------:|:--------:|:-------:|:--------:|:--------:|:------:|
+| Zero cloud storage | ✅ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ |
+| Zero telemetry | ✅ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ |
+| Works offline forever | ✅ | Limited | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ |
+| Free forever | ✅ | Free tier | $3/mo | $3/mo | ✅ | $4.99/mo | $2.99/mo | $2.92/mo |
+| Fully open source | ✅ | Partial | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ |
+| No account required | ✅ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ |
+| Argon2id KDF | ✅ | ✅ | ❌ | ❌ | Plugin | ❌ | ✅ | ❌ |
+| XChaCha20 encryption | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ |
+| Static crypto library | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| TOTP / 2FA codes | ✅ | ✅ | ✅ | ✅ | Plugin | ✅ | ✅ | ✅ |
+| Custom fields | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Password health report | ✅ | ✅ | ✅ | ✅ | Plugin | ✅ | ✅ | ✅ |
+| Trash / soft delete | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ |
+| Folders / Categories | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| CSV export | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Browser extension | ✅ | ✅ | ✅ | ✅ | Plugin | ✅ | ✅ | ✅ |
+| BIP-39 backup | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Ransomware detection | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Mobile app | 🔜 v0.4 | ✅ | ✅ | ✅ | Plugin | ✅ | ✅ | ✅ |
+| Breach in history | ❌ | 2023 minor | ❌ | **2022 breach** | ❌ | 2019 breach | ❌ | 2023 breach |
+
+> LastPass 2022 breach exposed encrypted vaults + master password hints. LSPV stores nothing on any server to breach.
+
+---
+
+## Quick Start
+
+### Windows
+
+1. Download `Local Security Pass Vault_0.1.10_x64-setup.exe` from [Releases](https://github.com/RakinSV/local-security-pass-vault/releases)
+2. Run the installer — no admin rights required (per-user NSIS install)
+3. Launch **Local Security Pass Vault** from the Start menu
+4. Click **+ New Vault** and set a strong master password
+
+### Linux
+
+```bash
+chmod +x lspv-x86_64.AppImage
+./lspv-x86_64.AppImage
+```
+
+---
+
+## Security Architecture — 4 Levels
 
 ### Level 1 — Cryptographic Core
 
@@ -72,7 +184,7 @@ LSPV is built in four independent security layers. Each layer is designed so tha
   ✅ Auto-lock                 — configurable idle timer + lock-on-minimize
 ```
 
-### Level 1 — Storage Hardening
+### Level 2 — Storage Hardening
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -93,7 +205,7 @@ LSPV is built in four independent security layers. Each layer is designed so tha
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-### Level 2 — Browser Extension
+### Level 3 — Browser Extension
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -111,21 +223,16 @@ LSPV is built in four independent security layers. Each layer is designed so tha
 │  DOMAIN MATCHING — eTLD+1 (tldts library)                      │
 │    accounts.google.com ─ match ──► google.com vault entry       │
 │    google.com.evil.ru  ─ NO  ──► rejected                      │
-│    Stops subdomain spoofing at the algorithm level              │
-│                                                                 │
-│  THREAT MODEL COVERED: XSS injection · browser history leaks   │
-│    screenshot caching · Accessibility API leaks · DNS channels  │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-### Level 3 — Encrypted Backups
+### Level 4 — Encrypted Backups
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │  24-WORD BIP-39 MNEMONIC                                        │
 │    256 bits of entropy · standard English wordlist              │
 │    Shown ONCE — LSPV never stores it on disk                    │
-│    Write it on paper. Store the paper, not a photo.             │
 │                                                                 │
 │  BACKUP KDF — HARDENED ARGON2ID PROFILE                        │
 │    m = 4 GB RAM · t = 10 iterations · p = 4 threads            │
@@ -135,8 +242,6 @@ LSPV is built in four independent security layers. Each layer is designed so tha
 │                                                                 │
 │  .VBK FILE FORMAT: XChaCha20-Poly1305 + BLAKE3 checksum        │
 │    Integrity verified on restore — tampered file = hard reject  │
-│                                                                 │
-│  AUTO-ROTATION: 7 most recent copies kept in app_data/backups/ │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -150,7 +255,7 @@ LSPV is built in four independent security layers. Each layer is designed so tha
 | **Brute force master password** | Argon2id 256 MB ≈ 2-4s/attempt even on RTX 4090 |
 | **DLL/SO hijacking** | libsodium statically linked — no external DLL surface |
 | **GPU VRAM residue (LeftoverLocals)** | `sodium_mlock` + `PR_SET_DUMPABLE=0` documented mitigation |
-| **Supply chain (XZ-utils style)** | `cargo audit` in CI · `cargo vet` planned · minimal deps |
+| **Supply chain (XZ-utils style)** | `cargo audit` in CI · minimal deps |
 | **Windows Cloud Clipboard** | `CF_EXCLUDEFROMCLOUDCLIPBOARD` — not synced to MS cloud |
 | **Ransomware** | Honeypot file — unauthorized writes trigger vault lock |
 | **Symlink attack on vault.db** | `lstat()` + `O_NOFOLLOW` — symlinks refused at open |
@@ -162,65 +267,6 @@ Full threat model: [`docs/threat-model.md`](docs/threat-model.md)
 
 ---
 
-## Features
-
-- **Zero cloud, zero telemetry** — no network socket ever opens from the desktop app
-- **Offline-first** — works permanently without internet
-- **Multi-vault** — separate encrypted databases for work / personal / family
-- **6 item types** — Login · Card · Note · Identity · SSH Key · Server
-- **Browser extension** — Chrome, Edge, Firefox via local native messaging (no WebSocket)
-- **Auto-fill** — eTLD+1 domain matching, fills via native setter (not tracked by browser)
-- **Source tagging** — import label tracks browser profile or CSV origin; filterable in sidebar
-- **CSV import** — from Chrome and Firefox password exports
-- **BIP-39 backup UI** — full Settings → Backup tab: 4×6 word grid, 3-word verification, export `.vbk`
-- **Auto-backup rotation** — 7 most recent copies auto-saved on each export
-- **OS Keychain** — quick unlock using Windows DPAPI / macOS Keychain / libsecret; removable from Settings
-- **System tray** — Lock & Hide on minimize, left-click to toggle window
-- **Autostart** — optional launch at system login
-- **Ed25519 IPC signing** — extension verifies every native message
-- **Memory protection** — keys `mlock()`-ed and zeroed before deallocation
-- **Process hardening** — `PR_SET_DUMPABLE=0` on Linux at startup
-
----
-
-## LSPV vs Cloud Password Managers
-
-| Feature | **LSPV** | Bitwarden | 1Password | LastPass |
-|---------|:--------:|:---------:|:---------:|:--------:|
-| Zero cloud storage | ✅ | ❌ | ❌ | ❌ |
-| Zero telemetry | ✅ | ❌ | ❌ | ❌ |
-| Works offline, forever | ✅ | Limited | ❌ | ❌ |
-| Free forever | ✅ | Free tier | $3/mo | $3/mo |
-| Fully open source | ✅ | Partial | ❌ | ❌ |
-| No account required | ✅ | ❌ | ❌ | ❌ |
-| Argon2id KDF | ✅ | ✅ | ❌ | ❌ |
-| Static crypto library | ✅ | ❌ | ❌ | ❌ |
-| Browser extension | ✅ | ✅ | ✅ | ✅ |
-| Auto-fill | ✅ | ✅ | ✅ | ✅ |
-| BIP-39 backup | ✅ | ❌ | ❌ | ❌ |
-| Mobile app | 🔜 v0.4 | ✅ | ✅ | ✅ |
-| Hardware key (ESP32) | 🔜 v0.5 | ❌ | ❌ | ❌ |
-
----
-
-## Quick Start
-
-### Windows
-
-1. Download `lspv-setup-x64.exe` from [Releases](https://github.com/RakinSV/local-security-pass-vault/releases)
-2. Run the installer — no admin rights required (per-user NSIS install)
-3. Launch **Local Security Pass Vault** from the Start menu
-4. Click **+ New Vault** and set a strong master password
-
-### Linux
-
-```bash
-chmod +x lspv-x86_64.AppImage
-./lspv-x86_64.AppImage
-```
-
----
-
 ## Browser Extension
 
 LSPV talks to Chrome/Firefox via the [Native Messaging API](https://developer.chrome.com/docs/apps/nativeMessaging/) — a local named pipe, no WebSocket, no cloud relay.
@@ -229,18 +275,11 @@ LSPV talks to Chrome/Firefox via the [Native Messaging API](https://developer.ch
 1. In LSPV: **Settings → Browser → Chrome/Edge** — paste your extension ID from `chrome://extensions`
 2. Click **Apply & Register** — writes native messaging manifest to the registry
 3. Load unpacked: `chrome://extensions` → Developer mode → **Load unpacked** → `extension/dist/`
-4. Pin the LSPV icon to the toolbar
 
 ### Firefox
 1. **Settings → Browser → Firefox** → click **Add**
 2. **Apply & Register**
 3. `about:debugging` → This Firefox → **Load Temporary Add-on** → `extension/dist/manifest.json`
-
-### How auto-fill works
-- Popup shows items whose eTLD+1 domain matches the current tab
-- **Fill** injects credentials via native setter — not tracked by browser history
-- Content script detects login forms and shows an inline suggestion badge
-- Every IPC response is Ed25519-signed; extension verifies before acting
 
 ---
 
@@ -251,20 +290,11 @@ LSPV talks to Chrome/Firefox via the [Native Messaging API](https://developer.ch
 1. Click **Generate Phrase** — LSPV generates 24 BIP-39 words
 2. Write them on paper. LSPV never stores the mnemonic on disk.
 3. Tick the checkbox confirming you've written them down
-4. Optionally: complete the 3-word spot-check to verify you wrote them correctly
-5. Click **Export .vbk** → choose save location
+4. Click **Export .vbk** → choose save location
 
 To restore: paste your 24 words → pick the `.vbk` file → choose destination folder.
 
-Auto-backups are saved automatically to `%APPDATA%/lspv/backups/` (Windows) or `~/.local/share/lspv/backups/` (Linux) on every manual export. The 7 most recent copies are kept.
-
----
-
-## Multi-Vault
-
-LSPV supports multiple independent encrypted databases. Each vault has its own master password, Vault Key, BIP-39 mnemonic, and OS Keychain entry.
-
-Create: **+ New Vault** on the vault picker. Vaults can live on a local drive, external disk, or network share — any path your OS can open as a file.
+Auto-backups are saved automatically to `%APPDATA%/lspv/backups/` (Windows) or `~/.local/share/lspv/backups/` (Linux) on every export. The 7 most recent copies are kept.
 
 ---
 
@@ -319,7 +349,7 @@ local-security-pass-vault/
 │       └── models.rs    # Item types, vault schema
 ├── desktop/             # Tauri 2 desktop app (Windows + Linux + macOS)
 │   ├── src/             # React + Tailwind frontend
-│   │   └── pages/       # Settings (Security, Backup, Browser tabs), Vault, etc.
+│   │   └── pages/       # VaultList, ItemForm, ItemDetail, Settings (all tabs)
 │   └── src-tauri/       # Rust — IPC commands, OS Keychain, tray, browser integration
 ├── extension/           # Browser extension (Chrome + Firefox, Manifest V3)
 │   ├── src/
@@ -329,32 +359,10 @@ local-security-pass-vault/
 │   └── scripts/         # sri-check.js — build integrity verification
 ├── docs/
 │   ├── adr/             # Architecture Decision Records
-│   ├── wiki/            # GitHub wiki source files
+│   ├── screenshots/     # App screenshots for documentation
 │   └── threat-model.md  # Full STRIDE/PASTA threat model
 └── CLAUDE.md            # Development rules + crypto constraints
 ```
-
----
-
-## Architecture Decisions
-
-- **[ADR-001](docs/adr/ADR-001-crypto-library.md)** — Why libsodium over ring / RustCrypto
-- **[ADR-002](docs/adr/ADR-002-desktop-framework.md)** — Tauri 2, envelope encryption, Vault Key design
-- **[ADR-003](docs/adr/ADR-003-backup-format.md)** — BIP-39 backup with Argon2id 4 GB + BLAKE3
-
----
-
-## Contributing
-
-PRs welcome. Hard rules:
-
-1. **Crypto code** — read `.claude/rules/crypto.md` before touching `core-vault/src/crypto/`
-2. **No new crypto deps** — libsodium only. No `openssl`, `ring`, or `argon2` crates without explicit security review
-3. **Tests** — crypto changes require official test vectors (RFC 9106 for Argon2id, libsodium suite for XChaCha20)
-4. **No telemetry** — any PR adding outbound network calls will be closed immediately
-5. Run `cargo audit` before opening a PR
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for the full guide.
 
 ---
 
@@ -368,19 +376,38 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the full guide.
 - ✅ `PR_SET_DUMPABLE=0` explicitly called at startup on Linux
 - ✅ SRI integrity check for browser extension in CI
 
-### 🔜 v0.3 — Productivity
-- [ ] TOTP generator (in-app 2FA codes from stored TOTP secrets)
-- [ ] Password health report (duplicates, weak, breached — local check only, no network)
-- [ ] LAN sync between devices (no cloud involved)
-- [ ] Password generator (configurable length, charset, pronounceable options)
+### ✅ v0.3 — Productivity (complete)
+- ✅ **TOTP / 2FA** — live 6-digit codes with countdown ring; QR scan from clipboard
+- ✅ **Browser Extension Installer** — auto-detect Chrome/Edge/Firefox/Brave; install with one click
+- ✅ **Custom fields** — add hidden or visible custom fields to any Login entry
+- ✅ **Password history** — auto-saved on password change; viewable in item detail
+- ✅ **Favorites** — star items, sidebar filter
+- ✅ **Trash bin** — soft delete with restore/purge; "Empty trash" button
+- ✅ **Folders** — create/delete folders; sidebar filter
+- ✅ **Password health report** — weak / duplicate / old password detection
+- ✅ **CSV export** — Chrome/Firefox-compatible format
 
 ### 🔜 v0.4 — Mobile
 - [ ] **Android app** — Tauri 2 Mobile, same Rust crypto core, same React UI
 - [ ] **iOS app** — Tauri 2 Mobile for iPhone/iPad
+- [ ] **LAN sync** — vault sync between desktop and mobile, no cloud involved
 
 ### 🔜 v0.5 — Hardware Vault
 - [ ] **ESP32 hardware key** — vault unlock requires the physical device via USB/BLE
 - [ ] **M5StickC Plus2** — standalone portable vault with button-press unlock and BLE output
+- [ ] **Breached password check** — local offline check against HaveIBeenPwned SHA-1 hash list
+
+---
+
+## Contributing
+
+PRs welcome. Hard rules:
+
+1. **Crypto code** — read `.claude/rules/crypto.md` before touching `core-vault/src/crypto/`
+2. **No new crypto deps** — libsodium only. No `openssl`, `ring`, or `argon2` crates without explicit security review
+3. **Tests** — crypto changes require official test vectors (RFC 9106 for Argon2id, libsodium suite for XChaCha20)
+4. **No telemetry** — any PR adding outbound network calls will be closed immediately
+5. Run `cargo audit` before opening a PR
 
 ---
 

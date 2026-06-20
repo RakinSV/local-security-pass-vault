@@ -1,6 +1,6 @@
 use crate::error::AppError;
 use crate::state::AppState;
-use core_vault::models::ItemPayload;
+use core_vault::models::{ItemPayload, PasswordHistoryEntry};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::atomic::Ordering;
@@ -168,6 +168,28 @@ pub async fn create_item(
     Ok(id.to_string())
 }
 
+/// For Login items: if the password changed, prepend the old password to history (max 10 entries).
+/// All other item types pass through unchanged.
+fn with_password_history(old: &ItemPayload, mut new: ItemPayload) -> ItemPayload {
+    if let ItemPayload::Login { password: old_pw, password_history: old_hist, .. } = old {
+        if let ItemPayload::Login { password: new_pw, password_history: hist, .. } = &mut new {
+            if old_pw != new_pw && !new_pw.is_empty() {
+                let mut merged = old_hist.clone();
+                merged.insert(0, PasswordHistoryEntry {
+                    password: old_pw.clone(),
+                    changed_at: std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs() as i64,
+                });
+                merged.truncate(10);
+                *hist = merged;
+            }
+        }
+    }
+    new
+}
+
 #[tauri::command]
 pub async fn update_item(
     state: State<'_, AppState>,
@@ -183,7 +205,8 @@ pub async fn update_item(
     let uuid = Uuid::parse_str(&id)?;
     let mut item = vault.get_item(&uuid)?.ok_or(AppError::NotFound)?;
     item.title = title;
-    item.payload = serde_json::from_value(payload)?;
+    let new_payload: ItemPayload = serde_json::from_value(payload)?;
+    item.payload = with_password_history(&item.payload.clone(), new_payload);
     item.folder_id = folder_id.map(|s| Uuid::parse_str(&s)).transpose()?;
     item.favorite = favorite;
     item.source_tag = source_tag;
@@ -719,6 +742,109 @@ pub async fn activity_ping(state: State<'_, AppState>) -> Result<(), AppError> {
     Ok(())
 }
 
+// ── TOTP 2FA ──────────────────────────────────────────────────────────────────
+
+/// Generates the current 6-digit TOTP code from a Base32 secret.
+/// Returns the code and the number of seconds until the next code.
+#[tauri::command]
+pub async fn generate_totp(secret: String) -> Result<core_vault::totp::TotpCode, AppError> {
+    core_vault::totp::generate(&secret).map_err(AppError::Other)
+}
+
+/// Reads an image from the system clipboard and decodes any QR code found in it.
+/// If the QR content is an `otpauth://` URI, extracts and returns the Base32 secret.
+/// Returns `{ secret, issuer, account }` on success.
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QrResult {
+    pub secret: String,
+    pub issuer: String,
+    pub account: String,
+    pub raw_uri: String,
+}
+
+#[tauri::command]
+pub async fn decode_qr_from_clipboard() -> Result<QrResult, AppError> {
+    // arboard must run on a thread with clipboard access (not the Tokio executor thread)
+    tokio::task::spawn_blocking(|| {
+        // 1. Read image from clipboard
+        let mut clipboard = arboard::Clipboard::new()
+            .map_err(|e| AppError::Other(format!("clipboard error: {e}")))?;
+        let img_data = clipboard.get_image()
+            .map_err(|_| AppError::Other(
+                "No image found on clipboard. Copy the QR code image first.".into()
+            ))?;
+
+        // 2. Convert arboard RGBA bytes → image::GrayImage (luma8) for rqrr
+        let rgba = image::RgbaImage::from_raw(
+            img_data.width as u32,
+            img_data.height as u32,
+            img_data.bytes.into_owned(),
+        ).ok_or_else(|| AppError::Other("Failed to decode clipboard image.".into()))?;
+
+        let luma = image::DynamicImage::ImageRgba8(rgba).into_luma8();
+
+        // 3. Detect and decode QR grids
+        let mut prepared = rqrr::PreparedImage::prepare(luma);
+        let grids = prepared.detect_grids();
+        if grids.is_empty() {
+            return Err(AppError::Other(
+                "No QR code found in the clipboard image. \
+                 Make sure you copied the QR code image.".into()
+            ));
+        }
+
+        // Try each grid, return first successful decode
+        let mut last_err = String::new();
+        for grid in grids {
+            match grid.decode() {
+                Ok((_meta, content)) => {
+                    let content = content.trim();
+                    // Parse otpauth:// URI
+                    let (secret, issuer, account) =
+                        core_vault::totp::parse_otpauth_uri(content)
+                            .map_err(|e| AppError::Other(format!(
+                                "QR decoded but content is not a TOTP URI: {e}. Content: {content}"
+                            )))?;
+                    return Ok(QrResult {
+                        secret,
+                        issuer,
+                        account,
+                        raw_uri: content.to_string(),
+                    });
+                }
+                Err(e) => last_err = e.to_string(),
+            }
+        }
+        Err(AppError::Other(format!("QR code found but could not be decoded: {last_err}")))
+    })
+    .await
+    .map_err(|e| AppError::Other(format!("clipboard task panicked: {e}")))?
+}
+
+// ── Browser Extension Installer ────────────────────────────────────────────────
+
+/// Detects all installed Chromium-based browsers and Firefox, along with their profiles.
+#[tauri::command]
+pub async fn detect_browsers_for_extension(
+) -> Result<Vec<crate::ext_installer::DetectedBrowser>, AppError> {
+    Ok(tokio::task::spawn_blocking(crate::ext_installer::detect_browsers)
+        .await
+        .map_err(|e| AppError::Other(format!("detect task panicked: {e}")))?)
+}
+
+/// Installs the LSPV browser extension to the requested browsers / Firefox profiles.
+#[tauri::command]
+pub async fn install_extension_to_browsers(
+    requests: Vec<crate::ext_installer::InstallRequest>,
+) -> Result<Vec<crate::ext_installer::InstallResult>, AppError> {
+    Ok(tokio::task::spawn_blocking(move || {
+        crate::ext_installer::install_extension(&requests)
+    })
+    .await
+    .map_err(|e| AppError::Other(format!("install task panicked: {e}")))?)
+}
+
 // ── Keychain vault status ──────────────────────────────────────────────────────
 
 #[derive(Debug, Serialize)]
@@ -752,4 +878,169 @@ pub async fn keychain_vault_status(
             })
         }
     }
+}
+
+// ── Trash (soft-delete management) ────────────────────────────────────────────
+
+/// Lists all soft-deleted items (the trash bin).
+#[tauri::command]
+pub async fn list_deleted_items(state: State<'_, AppState>) -> Result<Vec<ItemSummaryDto>, AppError> {
+    let guard = state.vault.lock().map_err(|_| AppError::LockPoisoned)?;
+    let vault = guard.as_ref().ok_or(AppError::VaultLocked)?;
+    let items = vault.list_deleted_items()?;
+    Ok(items
+        .into_iter()
+        .map(|i| ItemSummaryDto {
+            id: i.id.to_string(),
+            item_type: i.item_type.as_str().to_string(),
+            title: i.title,
+            folder_id: i.folder_id.map(|u| u.to_string()),
+            favorite: i.favorite,
+            updated_at: i.updated_at,
+            source_tag: i.source_tag,
+        })
+        .collect())
+}
+
+/// Restores a soft-deleted item back to the vault.
+#[tauri::command]
+pub async fn restore_item(state: State<'_, AppState>, id: String) -> Result<(), AppError> {
+    let mut guard = state.vault.lock().map_err(|_| AppError::LockPoisoned)?;
+    let vault = guard.as_mut().ok_or(AppError::VaultLocked)?;
+    let uuid = Uuid::parse_str(&id)?;
+    vault.restore_item(&uuid)?;
+    vault.save()?;
+    Ok(())
+}
+
+/// Permanently deletes one item from the trash bin.
+#[tauri::command]
+pub async fn purge_item(state: State<'_, AppState>, id: String) -> Result<(), AppError> {
+    let mut guard = state.vault.lock().map_err(|_| AppError::LockPoisoned)?;
+    let vault = guard.as_mut().ok_or(AppError::VaultLocked)?;
+    let uuid = Uuid::parse_str(&id)?;
+    vault.purge_item(&uuid)?;
+    vault.save()?;
+    Ok(())
+}
+
+/// Permanently deletes ALL items from the trash bin. Returns count deleted.
+#[tauri::command]
+pub async fn purge_all_trash(state: State<'_, AppState>) -> Result<usize, AppError> {
+    let mut guard = state.vault.lock().map_err(|_| AppError::LockPoisoned)?;
+    let vault = guard.as_mut().ok_or(AppError::VaultLocked)?;
+    let n = vault.purge_all_trash()?;
+    vault.save()?;
+    Ok(n)
+}
+
+// ── Folders ────────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FolderDto {
+    pub id: String,
+    pub name: String,
+    pub icon: Option<String>,
+    pub created_at: i64,
+}
+
+/// Lists all folders.
+#[tauri::command]
+pub async fn list_folders(state: State<'_, AppState>) -> Result<Vec<FolderDto>, AppError> {
+    let guard = state.vault.lock().map_err(|_| AppError::LockPoisoned)?;
+    let vault = guard.as_ref().ok_or(AppError::VaultLocked)?;
+    let folders = vault.list_folders()?;
+    Ok(folders
+        .into_iter()
+        .map(|f| FolderDto {
+            id: f.id.to_string(),
+            name: f.name,
+            icon: f.icon,
+            created_at: f.created_at,
+        })
+        .collect())
+}
+
+/// Creates a new folder. Returns the new folder's UUID string.
+#[tauri::command]
+pub async fn add_folder(
+    state: State<'_, AppState>,
+    name: String,
+    icon: Option<String>,
+) -> Result<String, AppError> {
+    let mut guard = state.vault.lock().map_err(|_| AppError::LockPoisoned)?;
+    let vault = guard.as_mut().ok_or(AppError::VaultLocked)?;
+    let id = vault.add_folder(&name, None, icon)?;
+    vault.save()?;
+    Ok(id.to_string())
+}
+
+/// Deletes a folder. Items inside get folder_id = NULL (moved to root).
+#[tauri::command]
+pub async fn delete_folder(state: State<'_, AppState>, id: String) -> Result<(), AppError> {
+    let mut guard = state.vault.lock().map_err(|_| AppError::LockPoisoned)?;
+    let vault = guard.as_mut().ok_or(AppError::VaultLocked)?;
+    let uuid = Uuid::parse_str(&id)?;
+    vault.delete_folder(&uuid)?;
+    Ok(())
+}
+
+// ── Password health report ─────────────────────────────────────────────────────
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HealthEntryDto {
+    pub id: String,
+    pub title: String,
+    pub url: String,
+    pub is_weak: bool,
+    pub is_duplicate: bool,
+    pub is_old: bool,
+    pub updated_at: i64,
+}
+
+/// Analyses all Login items and returns health issues.
+#[tauri::command]
+pub async fn get_health_report(state: State<'_, AppState>) -> Result<Vec<HealthEntryDto>, AppError> {
+    let guard = state.vault.lock().map_err(|_| AppError::LockPoisoned)?;
+    let vault = guard.as_ref().ok_or(AppError::VaultLocked)?;
+    let entries = vault.health_report()?;
+    Ok(entries
+        .into_iter()
+        .map(|e| HealthEntryDto {
+            id: e.id,
+            title: e.title,
+            url: e.url,
+            is_weak: e.is_weak,
+            is_duplicate: e.is_duplicate,
+            is_old: e.is_old,
+            updated_at: e.updated_at,
+        })
+        .collect())
+}
+
+// ── CSV Export ─────────────────────────────────────────────────────────────────
+
+/// Opens a native save-file dialog for choosing a CSV export path.
+#[tauri::command]
+pub async fn pick_csv_save_path() -> Option<String> {
+    rfd::AsyncFileDialog::new()
+        .set_title("Export passwords as CSV")
+        .add_filter("CSV", &["csv"])
+        .set_file_name("passwords_export.csv")
+        .save_file()
+        .await
+        .map(|h| h.path().to_string_lossy().into_owned())
+}
+
+/// Exports all Login items to a CSV file at the given path.
+#[tauri::command]
+pub async fn export_items_csv(state: State<'_, AppState>, path: String) -> Result<(), AppError> {
+    let guard = state.vault.lock().map_err(|_| AppError::LockPoisoned)?;
+    let vault = guard.as_ref().ok_or(AppError::VaultLocked)?;
+    let csv = vault.export_items_csv()?;
+    std::fs::write(&path, csv.as_bytes())
+        .map_err(|e| AppError::Other(format!("Failed to write CSV: {e}")))?;
+    Ok(())
 }

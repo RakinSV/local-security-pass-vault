@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
 import { getItem, deleteItem } from "../api/vault";
 import { PasswordField } from "../components/PasswordField";
-import type { Item } from "../types/vault";
+import { TotpCode } from "../components/TotpCode";
+import type { Item, PasswordHistoryEntry } from "../types/vault";
 
 interface Props {
   itemId: string;
@@ -30,6 +31,40 @@ function CopyBtn({ value }: { value: string }) {
     >
       {copied ? "✓ 30s" : "copy"}
     </button>
+  );
+}
+
+function PasswordHistorySection({ history }: { history: PasswordHistoryEntry[] }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="flex flex-col gap-2">
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="flex items-center gap-1.5 text-xs font-medium text-[var(--muted)] uppercase
+                   tracking-wide hover:text-[var(--text)] transition-colors text-left"
+      >
+        <span className="text-[10px]">{open ? "▾" : "▸"}</span>
+        Password History ({history.length})
+      </button>
+      {open && (
+        <div className="flex flex-col divide-y divide-[var(--border)] border border-[var(--border)]
+                        rounded-xl bg-[var(--surface)] overflow-hidden">
+          {history.map((entry, i) => (
+            <div key={i} className="px-3 py-2 flex flex-col gap-1">
+              <div className="text-[10px] text-[var(--muted)]">
+                {new Date(entry.changed_at * 1000).toLocaleString()}
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="flex-1">
+                  <PasswordField label="" value={entry.password} readOnly />
+                </div>
+                <CopyBtn value={entry.password} />
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -135,11 +170,21 @@ export function ItemDetail({ itemId, onBack, onEdit, onDeleted }: Props) {
             <Field label="URL" value={p.url} />
             <Field label="Username" value={p.username} />
             <Field label="Password" value={p.password} secret />
-            {p.totp_secret && <Field label="TOTP Secret" value={p.totp_secret} secret />}
+            {p.totp_secret && (
+              <div className="flex flex-col gap-1">
+                <div className="text-xs font-medium text-[var(--muted)] uppercase tracking-wide">2FA Code</div>
+                <div className="bg-[var(--bg)] border border-[var(--border)] rounded-lg px-3 py-2">
+                  <TotpCode secret={p.totp_secret} />
+                </div>
+              </div>
+            )}
             {p.notes && <Field label="Notes" value={p.notes} />}
             {p.custom_fields.map((cf, i) => (
               <Field key={i} label={cf.label} value={cf.value} secret={cf.hidden} />
             ))}
+            {p.password_history.length > 0 && (
+              <PasswordHistorySection history={p.password_history} />
+            )}
           </>
         )}
 

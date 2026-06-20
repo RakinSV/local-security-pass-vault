@@ -255,10 +255,38 @@ impl Db {
     /// Физическая очистка корзины: удалить записи, помеченные deleted, старше cutoff.
     pub fn purge_deleted(&self, older_than: i64) -> Result<usize> {
         let n = self.conn.execute(
-            "DELETE FROM items WHERE deleted = 1 AND updated_at < ?1",
+            "DELETE FROM items WHERE deleted = 1 AND updated_at <= ?1",
             params![older_than],
         )?;
         Ok(n)
+    }
+
+    /// Список удалённых записей (deleted = 1), новые сверху.
+    pub fn list_deleted_items(&self) -> Result<Vec<ItemRow>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, item_type, title_encrypted, title_search_hash, payload_encrypted, payload_nonce,
+                    folder_id, favorite, created_at, updated_at, lamport_clock, deleted, source_tag
+             FROM items WHERE deleted = 1 ORDER BY updated_at DESC",
+        )?;
+        let rows = stmt.query_map([], map_item_row)?;
+        let mut out = Vec::new();
+        for r in rows { out.push(r?); }
+        Ok(out)
+    }
+
+    /// Восстанавливает запись из корзины (deleted → 0).
+    pub fn restore_item(&self, id: &Uuid, updated_at: i64, lamport_clock: i64) -> Result<()> {
+        self.conn.execute(
+            "UPDATE items SET deleted = 0, updated_at = ?2, lamport_clock = ?3 WHERE id = ?1",
+            params![id.to_string(), updated_at, lamport_clock],
+        )?;
+        Ok(())
+    }
+
+    /// Физическое удаление одной записи (безвозвратно).
+    pub fn purge_item(&self, id: &Uuid) -> Result<()> {
+        self.conn.execute("DELETE FROM items WHERE id = ?1", params![id.to_string()])?;
+        Ok(())
     }
 
     // ── folders ──────────────────────────────────────────────────────────────
@@ -303,6 +331,16 @@ impl Db {
             out.push(r?);
         }
         Ok(out)
+    }
+
+    /// Удаляет папку; записи внутри получают folder_id = NULL.
+    pub fn delete_folder(&self, id: &Uuid) -> Result<()> {
+        self.conn.execute(
+            "UPDATE items SET folder_id = NULL WHERE folder_id = ?1",
+            params![id.to_string()],
+        )?;
+        self.conn.execute("DELETE FROM folders WHERE id = ?1", params![id.to_string()])?;
+        Ok(())
     }
 }
 

@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { ExtensionInstaller } from "../components/ExtensionInstaller";
 import { PasswordField } from "../components/PasswordField";
 import {
   changeMasterPassword,
@@ -26,16 +27,26 @@ import {
   keychainDeleteKey,
   pickFolder,
   vaultStatus,
+  listDeletedItems,
+  restoreItem,
+  purgeItem,
+  purgeAllTrash,
+  listFolders,
+  addFolder,
+  deleteFolder,
+  getHealthReport,
+  pickCsvSavePath,
+  exportItemsCsv,
 } from "../api/vault";
-import type { AutoBackupEntry, KeychainVaultStatus } from "../api/vault";
-import type { BrowserConfig, ImportRow, ProfileInfo } from "../types/vault";
+import type { AutoBackupEntry, FolderInfo, HealthEntry, KeychainVaultStatus } from "../api/vault";
+import type { BrowserConfig, ImportRow, ItemSummary, ProfileInfo } from "../types/vault";
 
 interface Props {
   onBack: () => void;
   onImported?: () => void;
 }
 
-type Tab = "general" | "security" | "backup" | "browser" | "import" | "about";
+type Tab = "general" | "security" | "backup" | "browser" | "import" | "data" | "about";
 
 export function Settings({ onBack, onImported }: Props) {
   const [tab, setTab] = useState<Tab>("general");
@@ -46,6 +57,7 @@ export function Settings({ onBack, onImported }: Props) {
     { id: "backup",   label: "Backup"   },
     { id: "browser",  label: "Browser"  },
     { id: "import",   label: "Import"   },
+    { id: "data",     label: "Data"     },
     { id: "about",    label: "About"    },
   ];
 
@@ -84,6 +96,7 @@ export function Settings({ onBack, onImported }: Props) {
         {tab === "backup"   && <BackupTab />}
         {tab === "browser"  && <BrowserTab />}
         {tab === "import"   && <ImportTab onImported={onImported} />}
+        {tab === "data"     && <DataTab />}
         {tab === "about"    && <AboutTab />}
       </div>
     </div>
@@ -777,6 +790,16 @@ function BrowserTab() {
         )}
       </div>
 
+      {/* ── Extension Installer ── */}
+      <div>
+        <h3 className="font-semibold mb-1 text-sm">Install browser extension</h3>
+        <p className="text-xs text-[var(--muted)] mb-3 leading-relaxed">
+          Installs the LSPV extension directly into your browsers without visiting the store.
+          Choose which browsers and Firefox profiles to install to.
+        </p>
+        <ExtensionInstaller />
+      </div>
+
       {/* Chrome / Edge */}
       <IdSection
         label="Chrome / Edge extension IDs"
@@ -1227,21 +1250,286 @@ function ProfilesSection({ profiles, onRename }: ProfilesSectionProps) {
   );
 }
 
+// ── Data Tab ──────────────────────────────────────────────────────────────────
+
+function DataTab() {
+  const [trashItems, setTrashItems]   = useState<ItemSummary[]>([]);
+  const [folders, setFolders]         = useState<FolderInfo[]>([]);
+  const [health, setHealth]           = useState<HealthEntry[] | null>(null);
+  const [newFolderName, setNewFolderName] = useState("");
+  const [status, setStatus] = useState<{ type: "success" | "error"; msg: string } | null>(null);
+  const [healthLoading, setHealthLoading] = useState(false);
+  const [exportLoading, setExportLoading] = useState(false);
+  const [refreshKey, setRefreshKey]   = useState(0);
+
+  useEffect(() => {
+    Promise.all([listDeletedItems(), listFolders()])
+      .then(([trash, fols]) => { setTrashItems(trash); setFolders(fols); })
+      .catch(err => setStatus({ type: "error", msg: String(err) }));
+  }, [refreshKey]);
+
+  const refresh = () => setRefreshKey(k => k + 1);
+
+  async function handleRestore(id: string) {
+    try {
+      await restoreItem(id);
+      refresh();
+      setStatus({ type: "success", msg: "Item restored." });
+    } catch (err) { setStatus({ type: "error", msg: String(err) }); }
+  }
+
+  async function handlePurge(id: string, title: string) {
+    if (!confirm(`Permanently delete "${title}"? This cannot be undone.`)) return;
+    try {
+      await purgeItem(id);
+      refresh();
+      setStatus({ type: "success", msg: "Item permanently deleted." });
+    } catch (err) { setStatus({ type: "error", msg: String(err) }); }
+  }
+
+  async function handleEmptyTrash() {
+    if (!confirm(`Permanently delete ALL ${trashItems.length} item(s) in trash? This cannot be undone.`)) return;
+    try {
+      const n = await purgeAllTrash();
+      refresh();
+      setStatus({ type: "success", msg: `Deleted ${n} item(s).` });
+    } catch (err) { setStatus({ type: "error", msg: String(err) }); }
+  }
+
+  async function handleAddFolder() {
+    const name = newFolderName.trim();
+    if (!name) return;
+    try {
+      await addFolder(name);
+      setNewFolderName("");
+      refresh();
+      setStatus({ type: "success", msg: `Folder "${name}" created.` });
+    } catch (err) { setStatus({ type: "error", msg: String(err) }); }
+  }
+
+  async function handleDeleteFolder(id: string, name: string) {
+    if (!confirm(`Delete folder "${name}"? Items inside will be moved to root.`)) return;
+    try {
+      await deleteFolder(id);
+      refresh();
+      setStatus({ type: "success", msg: `Folder "${name}" deleted.` });
+    } catch (err) { setStatus({ type: "error", msg: String(err) }); }
+  }
+
+  async function handleHealthReport() {
+    setHealthLoading(true);
+    setHealth(null);
+    try {
+      const entries = await getHealthReport();
+      setHealth(entries);
+    } catch (err) { setStatus({ type: "error", msg: String(err) }); }
+    finally { setHealthLoading(false); }
+  }
+
+  async function handleExportCsv() {
+    setExportLoading(true);
+    try {
+      const path = await pickCsvSavePath();
+      if (!path) return;
+      await exportItemsCsv(path);
+      setStatus({ type: "success", msg: `Exported to ${path}` });
+    } catch (err) { setStatus({ type: "error", msg: String(err) }); }
+    finally { setExportLoading(false); }
+  }
+
+  const sectionClass = "flex flex-col gap-3 p-4 border border-[var(--border)] rounded-xl bg-[var(--surface)]";
+  const headingClass = "text-sm font-semibold text-[var(--text)]";
+
+  return (
+    <div className="p-4 flex flex-col gap-6 max-w-lg">
+      {status && (
+        <div className={`text-sm px-3 py-2 rounded-lg border ${
+          status.type === "success"
+            ? "text-green-400 bg-green-950/30 border-green-900/40"
+            : "text-[var(--danger)] bg-red-950/30 border-red-900/40"
+        }`}>
+          {status.msg}
+          <button onClick={() => setStatus(null)} className="ml-2 text-[var(--muted)] hover:text-[var(--text)]">×</button>
+        </div>
+      )}
+
+      {/* Folders */}
+      <div className={sectionClass}>
+        <div className={headingClass}>📁 Folders</div>
+        <div className="flex gap-2">
+          <input
+            type="text"
+            value={newFolderName}
+            onChange={e => setNewFolderName(e.target.value)}
+            onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); handleAddFolder(); } }}
+            placeholder="New folder name…"
+            className="flex-1 bg-[var(--bg)] border border-[var(--border)] rounded-lg px-3 py-1.5
+                       text-sm text-[var(--text)] placeholder-[var(--muted)]
+                       focus:outline-none focus:border-[var(--accent)] transition-colors"
+          />
+          <button
+            onClick={handleAddFolder}
+            className="px-3 py-1.5 bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white text-sm
+                       rounded-lg transition-colors"
+          >
+            Create
+          </button>
+        </div>
+        {folders.length === 0 ? (
+          <div className="text-xs text-[var(--muted)]">No folders yet.</div>
+        ) : (
+          <div className="flex flex-col divide-y divide-[var(--border)] border border-[var(--border)] rounded-lg overflow-hidden">
+            {folders.map(f => (
+              <div key={f.id} className="flex items-center gap-2 px-3 py-2 bg-[var(--bg)]">
+                <span className="text-sm">{f.icon ?? "📁"}</span>
+                <span className="flex-1 text-sm text-[var(--text)] truncate">{f.name}</span>
+                <button
+                  onClick={() => handleDeleteFolder(f.id, f.name)}
+                  className="text-xs text-[var(--muted)] hover:text-[var(--danger)] transition-colors"
+                >
+                  Delete
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Trash */}
+      <div className={sectionClass}>
+        <div className="flex items-center justify-between">
+          <div className={headingClass}>🗑 Trash ({trashItems.length})</div>
+          {trashItems.length > 0 && (
+            <button
+              onClick={handleEmptyTrash}
+              className="text-xs text-[var(--danger)] hover:text-red-400 transition-colors"
+            >
+              Empty trash
+            </button>
+          )}
+        </div>
+        {trashItems.length === 0 ? (
+          <div className="text-xs text-[var(--muted)]">Trash is empty.</div>
+        ) : (
+          <div className="flex flex-col divide-y divide-[var(--border)] border border-[var(--border)] rounded-lg overflow-hidden">
+            {trashItems.map(item => (
+              <div key={item.id} className="flex items-center gap-2 px-3 py-2 bg-[var(--bg)]">
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm text-[var(--text)] truncate">{item.title}</div>
+                  <div className="text-[10px] text-[var(--muted)]">
+                    {item.itemType} · deleted {new Date(item.updatedAt * 1000).toLocaleDateString()}
+                  </div>
+                </div>
+                <button
+                  onClick={() => handleRestore(item.id)}
+                  className="text-xs text-[var(--accent)] hover:text-[var(--accent-hover)] transition-colors flex-shrink-0"
+                >
+                  Restore
+                </button>
+                <button
+                  onClick={() => handlePurge(item.id, item.title)}
+                  className="text-xs text-[var(--muted)] hover:text-[var(--danger)] transition-colors flex-shrink-0"
+                >
+                  Delete
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Password health */}
+      <div className={sectionClass}>
+        <div className={headingClass}>🔍 Password Health</div>
+        <p className="text-xs text-[var(--muted)]">
+          Analyse your login passwords for weaknesses, duplicates, and entries not updated in 6+ months.
+        </p>
+        <button
+          onClick={handleHealthReport}
+          disabled={healthLoading}
+          className="self-start px-4 py-2 bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white text-sm
+                     rounded-lg transition-colors disabled:opacity-50"
+        >
+          {healthLoading ? "Analysing…" : "Run health check"}
+        </button>
+        {health !== null && (
+          health.length === 0 ? (
+            <div className="text-sm text-green-400">✓ All passwords look healthy!</div>
+          ) : (
+            <div className="flex flex-col divide-y divide-[var(--border)] border border-[var(--border)] rounded-lg overflow-hidden mt-1">
+              {health.map(e => (
+                <div key={e.id} className="px-3 py-2 bg-[var(--bg)] flex flex-col gap-0.5">
+                  <div className="text-sm text-[var(--text)] font-medium truncate">{e.title}</div>
+                  {e.url && <div className="text-[10px] text-[var(--muted)] truncate">{e.url}</div>}
+                  <div className="flex flex-wrap gap-1 mt-0.5">
+                    {e.isWeak && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-900/40 text-red-400 border border-red-900/40">Weak</span>
+                    )}
+                    {e.isDuplicate && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-900/40 text-amber-400 border border-amber-900/40">Duplicate</span>
+                    )}
+                    {e.isOld && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-[var(--border)] text-[var(--muted)] border border-[var(--border)]">Old (&gt;6mo)</span>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )
+        )}
+      </div>
+
+      {/* CSV Export */}
+      <div className={sectionClass}>
+        <div className={headingClass}>📤 Export passwords</div>
+        <p className="text-xs text-[var(--muted)]">
+          Export all Login entries as a CSV file compatible with Chrome, Firefox, and Bitwarden.
+        </p>
+        <button
+          onClick={handleExportCsv}
+          disabled={exportLoading}
+          className="self-start px-4 py-2 border border-[var(--border)] text-sm text-[var(--text)]
+                     hover:border-[var(--accent)] hover:text-[var(--accent)] rounded-lg transition-colors
+                     disabled:opacity-50"
+        >
+          {exportLoading ? "Saving…" : "Export as CSV"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ── About Tab ─────────────────────────────────────────────────────────────────
 
+const BTC_ADDRESS = "bc1qwnkyez3nv86dry54dqfjjtav29qqq72h69pevw";
+const CONTACT_EMAIL = "ssss2883866@gmail.com";
+
 function AboutTab() {
-  const [copied, setCopied] = useState(false);
+  const [copied,    setCopied]    = useState(false);
+  const [copiedBtc, setCopiedBtc] = useState(false);
+  const [copiedMail, setCopiedMail] = useState(false);
   const GITHUB = "https://github.com/RakinSV/local-security-pass-vault";
 
   async function handleGithub() {
     try {
       await openGithub();
     } catch {
-      // Fallback: copy URL to clipboard
       await navigator.clipboard.writeText(GITHUB).catch(() => {});
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     }
+  }
+
+  async function copyBtc() {
+    await navigator.clipboard.writeText(BTC_ADDRESS).catch(() => {});
+    setCopiedBtc(true);
+    setTimeout(() => setCopiedBtc(false), 2000);
+  }
+
+  async function copyMail() {
+    await navigator.clipboard.writeText(CONTACT_EMAIL).catch(() => {});
+    setCopiedMail(true);
+    setTimeout(() => setCopiedMail(false), 2000);
   }
 
   return (
@@ -1252,7 +1540,7 @@ function AboutTab() {
           <h2 className="font-bold text-base text-[var(--text)] leading-tight">
             Local Security Pass Vault
           </h2>
-          <div className="text-xs text-[var(--muted)] mt-0.5">Version 0.1.0</div>
+          <div className="text-xs text-[var(--muted)] mt-0.5">Version 0.1.10</div>
         </div>
       </div>
 
@@ -1280,16 +1568,16 @@ function AboutTab() {
         </div>
       </div>
 
+      {/* Source code */}
       <div className="flex flex-col gap-2">
         <div className="text-xs font-medium text-[var(--muted)] uppercase tracking-wider">Source code</div>
         <button
           onClick={handleGithub}
           className="flex items-center gap-3 rounded-xl border border-[var(--border)] bg-[var(--surface)]
-                     hover:border-[var(--accent)] hover:bg-[var(--surface)] px-4 py-3 transition-colors
-                     text-left group w-full"
+                     hover:border-[var(--accent)] px-4 py-3 transition-colors text-left group w-full"
         >
           <span className="text-lg">⌥</span>
-          <div className="flex-1">
+          <div className="flex-1 min-w-0">
             <div className="text-sm font-medium text-[var(--text)] group-hover:text-[var(--accent)] transition-colors">
               {copied ? "URL copied!" : "Open on GitHub"}
             </div>
@@ -1297,6 +1585,55 @@ function AboutTab() {
           </div>
           <span className="text-[var(--muted)] text-xs">↗</span>
         </button>
+      </div>
+
+      {/* Contact */}
+      <div className="flex flex-col gap-2">
+        <div className="text-xs font-medium text-[var(--muted)] uppercase tracking-wider">Contact</div>
+        <button
+          onClick={copyMail}
+          className="flex items-center gap-3 rounded-xl border border-[var(--border)] bg-[var(--surface)]
+                     hover:border-[var(--accent)] px-4 py-3 transition-colors text-left group w-full"
+        >
+          <span className="text-lg">✉️</span>
+          <div className="flex-1 min-w-0">
+            <div className="text-sm font-medium text-[var(--text)] group-hover:text-[var(--accent)] transition-colors">
+              {copiedMail ? "Copied!" : "Send an email"}
+            </div>
+            <div className="text-xs text-[var(--muted)] font-mono mt-0.5 truncate">{CONTACT_EMAIL}</div>
+          </div>
+          <span className="text-[10px] text-[var(--muted)]">copy</span>
+        </button>
+      </div>
+
+      {/* Bitcoin donation */}
+      <div className="flex flex-col gap-2">
+        <div className="text-xs font-medium text-[var(--muted)] uppercase tracking-wider">Support the project</div>
+        <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4 flex flex-col gap-3">
+          <p className="text-xs text-[var(--muted)] leading-relaxed">
+            If LSPV saves you time or keeps your data safe, consider a Bitcoin donation —
+            it helps keep the project alive and open-source.
+          </p>
+          <button
+            onClick={copyBtc}
+            className="flex items-center gap-3 bg-[var(--bg)] border border-[var(--border)]
+                       hover:border-amber-600/60 rounded-xl px-4 py-3 transition-colors
+                       text-left group w-full"
+          >
+            <span className="text-xl flex-shrink-0">₿</span>
+            <div className="flex-1 min-w-0">
+              <div className="text-[10px] text-[var(--muted)] uppercase tracking-wide mb-0.5">Bitcoin (BTC)</div>
+              <div className="text-xs font-mono text-[var(--text)] break-all leading-relaxed">
+                {BTC_ADDRESS}
+              </div>
+            </div>
+            <span className={`text-xs flex-shrink-0 transition-colors ml-2 ${
+              copiedBtc ? "text-amber-400" : "text-[var(--muted)] group-hover:text-amber-400"
+            }`}>
+              {copiedBtc ? "✓ copied" : "copy"}
+            </span>
+          </button>
+        </div>
       </div>
 
       <div className="text-xs text-[var(--muted)] text-center">

@@ -8,6 +8,7 @@ pub mod db;
 pub mod error;
 pub mod models;
 pub mod sodium;
+pub mod totp;
 pub mod vault;
 
 pub use error::{Result, VaultError};

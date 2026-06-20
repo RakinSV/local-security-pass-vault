@@ -148,3 +148,112 @@ export const pickBackupFile = () =>
 
 export const pickBackupSavePath = () =>
   invoke<string | null>("pick_backup_save_path");
+
+// ── TOTP 2FA ──────────────────────────────────────────────────────────────────
+
+export interface TotpCode {
+  code: string;
+  validForSecs: number;
+  periodSecs: number;
+}
+
+export const generateTotp = (secret: string) =>
+  invoke<TotpCode>("generate_totp", { secret });
+
+export interface QrResult {
+  secret: string;
+  issuer: string;
+  account: string;
+  rawUri: string;
+}
+
+export const decodeQrFromClipboard = () =>
+  invoke<QrResult>("decode_qr_from_clipboard");
+
+// ── Browser Extension Installer ───────────────────────────────────────────────
+
+export interface BrowserProfile {
+  id: string;
+  name: string;
+  path: string;
+}
+
+export interface DetectedBrowser {
+  id: string;
+  name: string;
+  installed: boolean;
+  profiles: BrowserProfile[];
+  supportsPerProfile: boolean;
+}
+
+export interface InstallRequest {
+  browserId: string;
+  profileIds: string[];
+}
+
+export interface InstallResult {
+  browserId: string;
+  success: boolean;
+  message: string;
+}
+
+export const detectBrowsersForExtension = () =>
+  invoke<DetectedBrowser[]>("detect_browsers_for_extension");
+
+export const installExtensionToBrowsers = (requests: InstallRequest[]) =>
+  invoke<InstallResult[]>("install_extension_to_browsers", { requests });
+
+// ── Trash ──────────────────────────────────────────────────────────────────────
+
+export const listDeletedItems = () =>
+  invoke<ItemSummary[]>("list_deleted_items");
+
+export const restoreItem = (id: string) =>
+  invoke<void>("restore_item", { id });
+
+export const purgeItem = (id: string) =>
+  invoke<void>("purge_item", { id });
+
+export const purgeAllTrash = () =>
+  invoke<number>("purge_all_trash");
+
+// ── Folders ────────────────────────────────────────────────────────────────────
+
+export interface FolderInfo {
+  id: string;
+  name: string;
+  icon: string | null;
+  createdAt: number;
+}
+
+export const listFolders = () =>
+  invoke<FolderInfo[]>("list_folders");
+
+export const addFolder = (name: string, icon?: string) =>
+  invoke<string>("add_folder", { name, icon: icon ?? null });
+
+export const deleteFolder = (id: string) =>
+  invoke<void>("delete_folder", { id });
+
+// ── Password health ────────────────────────────────────────────────────────────
+
+export interface HealthEntry {
+  id: string;
+  title: string;
+  url: string;
+  isWeak: boolean;
+  isDuplicate: boolean;
+  isOld: boolean;
+  updatedAt: number;
+}
+
+export const getHealthReport = () =>
+  invoke<HealthEntry[]>("get_health_report");
+
+// ── CSV Export ─────────────────────────────────────────────────────────────────
+
+export const pickCsvSavePath = () =>
+  invoke<string | null>("pick_csv_save_path");
+
+export const exportItemsCsv = (path: string) =>
+  invoke<void>("export_items_csv", { path });

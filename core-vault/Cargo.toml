@@ -26,6 +26,8 @@ rusqlite = { version = "0.32", features = ["bundled", "serialize"] }
 # blake3: быстрый криптографический хеш для проверки целостности.
 bip39   = "2"
 blake3  = "1"
+# TOTP 2FA: RFC 6238 code generation from Base32 secret.
+totp-rs = "5"
 
 [features]
 # Раскрывает внутренние точки входа для cargo-fuzz (см. fuzz/). Не для прода.

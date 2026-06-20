@@ -25,6 +25,10 @@ core-vault           = { path = "../../core-vault" }
 keyring              = "2"
 rfd                  = { version = "0.14", default-features = false, features = ["tokio"] }
 webbrowser           = "1"
+# TOTP QR decoding from clipboard image
+arboard              = { version = "3", default-features = false, features = ["image-data"] }
+rqrr                 = "0.9"
+image                = { version = "0.25", default-features = false, features = ["png", "jpeg", "bmp", "gif"] }
 
 [target.'cfg(windows)'.dependencies]
 winreg = "0.52"

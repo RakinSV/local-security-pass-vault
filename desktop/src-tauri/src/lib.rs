@@ -1,4 +1,5 @@
 mod browser_integration;
+mod ext_installer;
 mod commands;
 mod csv_import;
 mod ed25519_key;
@@ -207,6 +208,20 @@ pub fn run() {
             commands::list_auto_backups,
             commands::pick_backup_file,
             commands::pick_backup_save_path,
+            commands::generate_totp,
+            commands::decode_qr_from_clipboard,
+            commands::detect_browsers_for_extension,
+            commands::install_extension_to_browsers,
+            commands::list_deleted_items,
+            commands::restore_item,
+            commands::purge_item,
+            commands::purge_all_trash,
+            commands::list_folders,
+            commands::add_folder,
+            commands::delete_folder,
+            commands::get_health_report,
+            commands::pick_csv_save_path,
+            commands::export_items_csv,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

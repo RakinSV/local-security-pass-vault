@@ -1,5 +1,7 @@
 import { useState, useEffect } from "react";
 import { PasswordField } from "../components/PasswordField";
+import { TotpSetup } from "../components/TotpSetup";
+import { PasswordGenerator } from "../components/PasswordGenerator";
 import { createItem, updateItem, getItem } from "../api/vault";
 import type { ItemType, ItemPayload } from "../types/vault";
 
@@ -44,6 +46,7 @@ export function ItemForm({ editId, defaultType = "login", onSaved, onBack }: Pro
   const [sourceTag, setSourceTag] = useState<string>("");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+  const [showGenerator, setShowGenerator] = useState(false);
   const [loading, setLoading] = useState(!!editId);
 
   useEffect(() => {
@@ -174,9 +177,101 @@ export function ItemForm({ editId, defaultType = "login", onSaved, onBack }: Pro
             <>
               <TextField label="URL" value={p.url} onChange={v => setField("url", v)} placeholder="https://example.com" />
               <TextField label="Username" value={p.username} onChange={v => setField("username", v)} placeholder="user@example.com" />
-              <PasswordField label="Password" value={p.password} onChange={v => setField("password", v)} placeholder="Password" />
-              <TextField label="TOTP secret (optional)" value={p.totp_secret ?? ""} onChange={v => setField("totp_secret", v || null)} placeholder="Base32 TOTP seed" />
+              {/* Password field + generator toggle */}
+              <div className="flex flex-col gap-2">
+                <div className="flex items-end gap-2">
+                  <div className="flex-1">
+                    <PasswordField label="Password" value={p.password} onChange={v => setField("password", v)} placeholder="Password" />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowGenerator(prev => !prev)}
+                    title="Generate secure password"
+                    className={`mb-0.5 px-3 py-2 rounded-lg border text-xs font-medium transition-colors
+                      ${showGenerator
+                        ? "border-[var(--accent)] bg-[var(--accent)]/20 text-[var(--accent)]"
+                        : "border-[var(--border)] text-[var(--muted)] hover:border-[var(--accent)] hover:text-[var(--accent)]"
+                      }`}
+                  >
+                    ⚡ Generate
+                  </button>
+                </div>
+                {showGenerator && (
+                  <PasswordGenerator
+                    onUse={pw => {
+                      setField("password", pw);
+                      setShowGenerator(false);
+                    }}
+                  />
+                )}
+              </div>
+              <TotpSetup value={p.totp_secret ?? null} onChange={v => setField("totp_secret", v)} />
               <TextareaField label="Notes (optional)" value={p.notes ?? ""} onChange={v => setField("notes", v || null)} />
+              {/* Custom fields */}
+              <div className="flex flex-col gap-2 pt-1 border-t border-[var(--border)]/40">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-medium text-[var(--muted)] uppercase tracking-wide">
+                    Custom fields
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setField("custom_fields", [...p.custom_fields, { label: "", value: "", hidden: false }])}
+                    className="text-xs text-[var(--accent)] hover:text-[var(--accent-hover)] transition-colors"
+                  >
+                    + Add field
+                  </button>
+                </div>
+                {p.custom_fields.map((cf, i) => (
+                  <div key={i} className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={cf.label}
+                      onChange={e => {
+                        const updated = p.custom_fields.map((f, j) => j === i ? { ...f, label: e.target.value } : f);
+                        setField("custom_fields", updated);
+                      }}
+                      placeholder="Field name"
+                      className="w-28 flex-shrink-0 bg-[var(--bg)] border border-[var(--border)] rounded-lg px-2 py-1.5
+                                 text-xs text-[var(--text)] placeholder-[var(--muted)]
+                                 focus:outline-none focus:border-[var(--accent)] transition-colors"
+                    />
+                    <input
+                      type={cf.hidden ? "password" : "text"}
+                      value={cf.value}
+                      onChange={e => {
+                        const updated = p.custom_fields.map((f, j) => j === i ? { ...f, value: e.target.value } : f);
+                        setField("custom_fields", updated);
+                      }}
+                      placeholder="Value"
+                      className="flex-1 bg-[var(--bg)] border border-[var(--border)] rounded-lg px-2 py-1.5
+                                 text-xs text-[var(--text)] placeholder-[var(--muted)]
+                                 focus:outline-none focus:border-[var(--accent)] transition-colors"
+                    />
+                    <button
+                      type="button"
+                      title={cf.hidden ? "Show value" : "Treat as secret (hidden)"}
+                      onClick={() => {
+                        const updated = p.custom_fields.map((f, j) => j === i ? { ...f, hidden: !f.hidden } : f);
+                        setField("custom_fields", updated);
+                      }}
+                      className={`flex-shrink-0 px-1.5 py-1.5 rounded-lg border text-xs transition-colors
+                        ${cf.hidden
+                          ? "border-[var(--accent)] text-[var(--accent)]"
+                          : "border-[var(--border)] text-[var(--muted)]"
+                        }`}
+                    >
+                      {cf.hidden ? "🔒" : "👁"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setField("custom_fields", p.custom_fields.filter((_, j) => j !== i))}
+                      className="flex-shrink-0 text-[var(--muted)] hover:text-[var(--danger)] transition-colors text-base"
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+              </div>
             </>
           )}
 

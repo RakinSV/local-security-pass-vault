@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LSPV — Local Security Pass Vault</title>
+  <meta name="description" content="Open-source offline password manager built in Rust. Zero cloud, zero telemetry. XChaCha20-Poly1305 + Argon2id encryption. Windows & Linux." />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #0a0a0f;
+      --surface: #12121a;
+      --border: #1e1e2e;
+      --accent: #6c7fff;
+      --accent2: #4ade80;
+      --text: #e2e8f0;
+      --muted: #64748b;
+      --danger: #f87171;
+    }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      line-height: 1.6;
+    }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    /* NAV */
+    nav {
+      position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+      background: rgba(10,10,15,0.92); backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 2rem; height: 60px;
+    }
+    .nav-logo { font-weight: 700; font-size: 1.1rem; color: var(--text); display: flex; align-items: center; gap: 0.5rem; }
+    .nav-logo span { color: var(--accent); }
+    .nav-links { display: flex; gap: 1.5rem; align-items: center; }
+    .nav-links a { color: var(--muted); font-size: 0.9rem; transition: color .2s; }
+    .nav-links a:hover { color: var(--text); text-decoration: none; }
+    .btn { display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.5rem 1.25rem; border-radius: 8px; font-size: 0.9rem; font-weight: 600; transition: all .2s; cursor: pointer; border: none; text-decoration: none !important; }
+    .btn-primary { background: var(--accent); color: #fff; }
+    .btn-primary:hover { background: #8b9fff; }
+    .btn-ghost { background: transparent; border: 1px solid var(--border); color: var(--text); }
+    .btn-ghost:hover { border-color: var(--accent); color: var(--accent); }
+
+    /* HERO */
+    .hero {
+      padding: 8rem 2rem 5rem;
+      text-align: center;
+      background: radial-gradient(ellipse 80% 50% at 50% 0%, rgba(108,127,255,0.12) 0%, transparent 70%);
+    }
+    .hero-badge {
+      display: inline-flex; align-items: center; gap: 0.5rem;
+      background: rgba(108,127,255,0.1); border: 1px solid rgba(108,127,255,0.3);
+      border-radius: 999px; padding: 0.3rem 1rem; font-size: 0.8rem; color: var(--accent);
+      margin-bottom: 1.5rem;
+    }
+    .hero h1 { font-size: clamp(2.2rem, 5vw, 3.8rem); font-weight: 800; line-height: 1.15; margin-bottom: 1.25rem; }
+    .hero h1 span { color: var(--accent); }
+    .hero p { font-size: 1.15rem; color: var(--muted); max-width: 640px; margin: 0 auto 2rem; }
+    .hero-btns { display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap; margin-bottom: 3rem; }
+    .badges { display: flex; gap: 0.5rem; justify-content: center; flex-wrap: wrap; }
+    .badges img { height: 20px; }
+
+    /* ASCII art */
+    .ascii-hero {
+      font-family: 'Courier New', monospace; font-size: 0.62rem; line-height: 1.3;
+      color: var(--accent); opacity: 0.7; margin-bottom: 2rem;
+      display: inline-block; text-align: left;
+    }
+
+    /* SCREENSHOTS */
+    .section { padding: 5rem 2rem; max-width: 1200px; margin: 0 auto; }
+    .section-title { font-size: 1.8rem; font-weight: 700; margin-bottom: 0.5rem; }
+    .section-sub { color: var(--muted); margin-bottom: 2.5rem; }
+    .screenshots-grid {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1rem;
+    }
+    .screenshot-card {
+      background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+      overflow: hidden; transition: transform .2s, border-color .2s;
+    }
+    .screenshot-card:hover { transform: translateY(-3px); border-color: var(--accent); }
+    .screenshot-card img { width: 100%; display: block; }
+    .screenshot-card p { padding: 0.75rem 1rem; font-size: 0.85rem; color: var(--muted); }
+
+    /* FEATURES */
+    .features-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1.25rem; }
+    .feature-card {
+      background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+      padding: 1.5rem; transition: border-color .2s;
+    }
+    .feature-card:hover { border-color: var(--accent); }
+    .feature-icon { font-size: 1.75rem; margin-bottom: 0.75rem; }
+    .feature-card h3 { font-size: 1rem; font-weight: 600; margin-bottom: 0.4rem; }
+    .feature-card p { font-size: 0.875rem; color: var(--muted); }
+
+    /* CRYPTO DIAGRAM */
+    .crypto-box {
+      background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+      padding: 2rem; font-family: 'Courier New', monospace; font-size: 0.82rem;
+      line-height: 1.6; color: #a3b8cc; overflow-x: auto;
+    }
+    .crypto-box .hl { color: var(--accent2); }
+    .crypto-box .dim { color: var(--muted); }
+
+    /* COMPARISON TABLE */
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
+    th { padding: 0.75rem 1rem; text-align: left; color: var(--muted); font-weight: 600; border-bottom: 1px solid var(--border); white-space: nowrap; }
+    td { padding: 0.65rem 1rem; border-bottom: 1px solid rgba(30,30,46,0.6); }
+    tr:hover td { background: rgba(108,127,255,0.04); }
+    .check { color: var(--accent2); }
+    .cross { color: var(--danger); }
+    .warn { color: #fbbf24; }
+    th:first-child, td:first-child { font-weight: 500; }
+    td:nth-child(2) { color: var(--accent); font-weight: 600; }
+
+    /* INSTALL */
+    .install-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1.25rem; }
+    .install-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 1.5rem; }
+    .install-card h3 { font-size: 1rem; font-weight: 600; margin-bottom: 1rem; display: flex; align-items: center; gap: 0.5rem; }
+    .steps ol { padding-left: 1.25rem; }
+    .steps li { margin-bottom: 0.4rem; font-size: 0.875rem; color: var(--muted); }
+    code { background: rgba(108,127,255,0.1); border: 1px solid rgba(108,127,255,0.2); border-radius: 4px; padding: 0.15em 0.4em; font-size: 0.85em; font-family: 'Courier New', monospace; color: var(--accent); }
+    pre { background: #0d0d14; border: 1px solid var(--border); border-radius: 8px; padding: 1rem 1.25rem; overflow-x: auto; margin: 0.75rem 0; }
+    pre code { background: none; border: none; padding: 0; font-size: 0.82rem; color: #a3b8cc; }
+
+    /* DONATE */
+    .donate-section { text-align: center; background: var(--surface); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); padding: 4rem 2rem; }
+    .btc-address { font-family: 'Courier New', monospace; font-size: 0.9rem; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 0.75rem 1.25rem; display: inline-block; margin-top: 1rem; color: #f6d365; }
+
+    /* FOOTER */
+    footer { padding: 2.5rem 2rem; text-align: center; color: var(--muted); font-size: 0.85rem; border-top: 1px solid var(--border); }
+    footer a { color: var(--muted); }
+    footer a:hover { color: var(--accent); }
+
+    /* divider */
+    .divider { border: none; border-top: 1px solid var(--border); margin: 0; }
+  </style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav>
+  <div class="nav-logo">🔐 <span>LSPV</span> <span style="color:var(--muted);font-weight:400;font-size:0.85rem;">Local Security Pass Vault</span></div>
+  <div class="nav-links">
+    <a href="#features">Features</a>
+    <a href="#security">Security</a>
+    <a href="#compare">Compare</a>
+    <a href="#install">Install</a>
+    <a href="https://github.com/RakinSV/local-security-pass-vault/wiki">Wiki</a>
+    <a href="https://github.com/RakinSV/local-security-pass-vault" class="btn btn-ghost">GitHub</a>
+    <a href="https://github.com/RakinSV/local-security-pass-vault/releases/latest" class="btn btn-primary">⬇ Download</a>
+  </div>
+</nav>
+
+<!-- HERO -->
+<section class="hero">
+  <div class="hero-badge">🛡 v0.1.10 · GPL-3.0 · Rust + Tauri 2</div>
+  <pre class="ascii-hero">  ╔══════════════════════════════════════╗
+  ║  ██╗     ███████╗██████╗ ██╗   ██╗  ║
+  ║  ██║     ██╔════╝██╔══██╗██║   ██║  ║
+  ║  ██║     ███████╗██████╔╝██║   ██║  ║
+  ║  ██║     ╚════██║██╔═══╝ ╚██╗ ██╔╝  ║
+  ║  ███████╗███████║██║      ╚████╔╝   ║
+  ║  ╚══════╝╚══════╝╚═╝       ╚═══╝    ║
+  ╚══════════════════════════════════════╝</pre>
+
+  <h1>Password Manager with<br/><span>Zero Cloud</span>, Zero Trust</h1>
+  <p>Your vault never leaves your machine. No accounts. No subscriptions. No telemetry. Built in Rust with libsodium — the same crypto library used in WireGuard.</p>
+
+  <div class="hero-btns">
+    <a href="https://github.com/RakinSV/local-security-pass-vault/releases/latest" class="btn btn-primary">⬇ Download for Windows</a>
+    <a href="https://github.com/RakinSV/local-security-pass-vault" class="btn btn-ghost">★ View on GitHub</a>
+  </div>
+
+  <div class="badges">
+    <img src="https://img.shields.io/github/actions/workflow/status/RakinSV/local-security-pass-vault/security.yml?branch=main&label=CI&style=flat-square" alt="CI" />
+    <img src="https://img.shields.io/github/v/release/RakinSV/local-security-pass-vault?include_prereleases&style=flat-square&label=release" alt="Release" />
+    <img src="https://img.shields.io/badge/license-GPL--3.0-blue.svg?style=flat-square" alt="License" />
+    <img src="https://img.shields.io/badge/crypto-Argon2id_%2B_XChaCha20-brightgreen?style=flat-square" alt="Crypto" />
+    <img src="https://img.shields.io/badge/platform-Windows_%7C_Linux-lightgrey?style=flat-square" alt="Platform" />
+  </div>
+</section>
+
+<hr class="divider" />
+
+<!-- SCREENSHOTS -->
+<section class="section" id="screenshots">
+  <div class="section-title">See it in action</div>
+  <div class="section-sub">Dark UI, built for power users. Every screen works fully offline.</div>
+  <div class="screenshots-grid">
+    <div class="screenshot-card">
+      <img src="screenshots/06_vault_list.png" alt="Vault list" loading="lazy" />
+      <p>Vault list — filter by type, folder, favorites, or source tag</p>
+    </div>
+    <div class="screenshot-card">
+      <img src="screenshots/05_password_generator.png" alt="Password Generator" loading="lazy" />
+      <p>Built-in password generator with entropy meter</p>
+    </div>
+    <div class="screenshot-card">
+      <img src="screenshots/09_settings_security.png" alt="Security Settings" loading="lazy" />
+      <p>Auto-lock timer, OS Keychain quick-unlock, master password change</p>
+    </div>
+    <div class="screenshot-card">
+      <img src="screenshots/10_settings_backup.png" alt="Backup" loading="lazy" />
+      <p>BIP-39 24-word backup — export encrypted .vbk, restore anywhere</p>
+    </div>
+    <div class="screenshot-card">
+      <img src="screenshots/11_settings_data.png" alt="Data Tab" loading="lazy" />
+      <p>Folders, Trash bin, Password Health, CSV Export — all in one place</p>
+    </div>
+    <div class="screenshot-card">
+      <img src="screenshots/12_health_check.png" alt="Password Health" loading="lazy" />
+      <p>Password health report — weak, duplicate, and old password detection</p>
+    </div>
+  </div>
+</section>
+
+<hr class="divider" />
+
+<!-- FEATURES -->
+<section class="section" id="features">
+  <div class="section-title">Everything you need, nothing you don't</div>
+  <div class="section-sub">All features work offline. No internet required — ever.</div>
+  <div class="features-grid">
+    <div class="feature-card">
+      <div class="feature-icon">🔐</div>
+      <h3>6 Item Types</h3>
+      <p>Login · Card · Secure Note · Identity · SSH Key · Server — with custom fields on any Login entry</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">📁</div>
+      <h3>Folders & Favorites</h3>
+      <p>Organize items into folders. Star favorites for quick access. Filter the sidebar by folder, type, or source tag.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">🔑</div>
+      <h3>TOTP / 2FA</h3>
+      <p>Store TOTP secrets and get live 6-digit codes with a countdown ring. Scan QR codes directly from clipboard.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">🔢</div>
+      <h3>Password Generator</h3>
+      <p>Generate strong passwords with configurable length (8–64), character sets, and real-time entropy strength meter.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">🔍</div>
+      <h3>Password Health</h3>
+      <p>One-click scan detects weak (&lt;12 chars), duplicate, and old (&gt;6 months) passwords across your entire vault.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">🗑</div>
+      <h3>Trash Bin</h3>
+      <p>Soft-delete items to trash. Restore individual items or empty trash entirely. Nothing is gone until you say so.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">📤</div>
+      <h3>CSV Export</h3>
+      <p>Export all logins to Chrome/Firefox-compatible CSV. Import back from Chrome, Firefox, Bitwarden, and 1Password.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">🧩</div>
+      <h3>Browser Extension</h3>
+      <p>Chrome, Edge, Firefox auto-fill via local native messaging. Zero network requests — all data stays on your machine.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">🗝</div>
+      <h3>OS Quick-Unlock</h3>
+      <p>After first login, use Windows DPAPI / macOS Keychain / libsecret for quick vault unlock. Removable from Settings.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">💾</div>
+      <h3>BIP-39 Backup</h3>
+      <p>24-word seed phrase for encrypted .vbk backups. Shown once, never stored on disk. Argon2id 4 GB KDF — GPU-proof.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">🏠</div>
+      <h3>Multi-Vault</h3>
+      <p>Separate encrypted databases for work, personal, and family. Each vault has its own master password and keychain entry.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">⏱</div>
+      <h3>Auto-Lock</h3>
+      <p>Configurable idle timer (1 min to 1 hour). Lock on minimize. Vault key zeroed from memory immediately on lock.</p>
+    </div>
+  </div>
+</section>
+
+<hr class="divider" />
+
+<!-- SECURITY -->
+<section class="section" id="security">
+  <div class="section-title">Military-grade cryptography, properly implemented</div>
+  <div class="section-sub">Built on libsodium — the same library used in WireGuard, Signal Protocol implementations, and Tor.</div>
+
+  <div class="crypto-box">
+<span class="hl">MASTER PASSWORD</span>  +  32-byte random Salt
+        │
+        ▼
+<span class="hl">ARGON2ID KDF</span>  (m=256 MB · t=4 iterations · p=4 threads)
+        │
+        ├──► <span class="hl">db_key     (32 B)</span>  <span class="dim">→ SQLCipher AES-256 (database-level encryption)</span>
+        ├──► <span class="hl">enc_key    (32 B)</span>  <span class="dim">→ decrypts the Vault Key</span>
+        └──► <span class="hl">search_key (32 B)</span>  <span class="dim">→ HMAC-SHA256 search index</span>
+
+<span class="dim">Vault Key (random 32 B, created once at vault init)</span>
+        │
+        ▼
+<span class="hl">XChaCha20-Poly1305</span>  (192-bit nonce, unique per save)
+        │
+        ▼
+<span class="dim">Encrypted records in SQLCipher DB</span>
+
+<span class="dim">RTX 4090 brute-force: ~2-4 seconds per attempt · practical attacks impossible</span>
+  </div>
+
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1rem;margin-top:1.5rem;">
+    <div class="feature-card">
+      <div class="feature-icon">🛡</div>
+      <h3>Envelope Encryption</h3>
+      <p>Master password derives keys, not encrypts data directly. Changing your password re-encrypts only the Vault Key — records untouched.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">⚡</div>
+      <h3>Unique Nonce Per Save</h3>
+      <p>Every record gets a fresh 192-bit random nonce at each save. Nonce reuse — the most common AEAD implementation bug — is architecturally impossible.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">🔒</div>
+      <h3>Memory Zeroing</h3>
+      <p><code>sodium_memzero()</code> + <code>mlock()</code> on every key. Keys can't be swapped to disk. On lock, the vault key is immediately zeroed from RAM.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">🐛</div>
+      <h3>Ransomware Detection</h3>
+      <p>A honeypot file sits next to vault.db. Any unauthorized modification triggers an immediate vault lock and user alert.</p>
+    </div>
+  </div>
+</section>
+
+<hr class="divider" />
+
+<!-- COMPARISON -->
+<section class="section" id="compare">
+  <div class="section-title">How LSPV compares</div>
+  <div class="section-sub">The only password manager with zero cloud architecture AND modern AEAD cryptography AND open source code.</div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Feature</th>
+          <th>LSPV</th>
+          <th>Bitwarden</th>
+          <th>1Password</th>
+          <th>LastPass</th>
+          <th>KeePass</th>
+          <th>Dashlane</th>
+          <th>NordPass</th>
+          <th>Keeper</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td>Zero cloud storage</td><td class="check">✅</td><td class="cross">❌</td><td class="cross">❌</td><td class="cross">❌</td><td class="check">✅</td><td class="cross">❌</td><td class="cross">❌</td><td class="cross">❌</td></tr>
+        <tr><td>Zero telemetry</td><td class="check">✅</td><td class="cross">❌</td><td class="cross">❌</td><td class="cross">❌</td><td class="check">✅</td><td class="cross">❌</td><td class="cross">❌</td><td class="cross">❌</td></tr>
+        <tr><td>Works offline forever</td><td class="check">✅</td><td class="warn">Limited</td><td class="cross">❌</td><td class="cross">❌</td><td class="check">✅</td><td class="cross">❌</td><td class="cross">❌</td><td class="cross">❌</td></tr>
+        <tr><td>Free forever</td><td class="check">✅</td><td class="warn">Free tier</td><td>$3/mo</td><td>$3/mo</td><td class="check">✅</td><td>$4.99/mo</td><td>$2.99/mo</td><td>$2.92/mo</td></tr>
+        <tr><td>No account required</td><td class="check">✅</td><td class="cross">❌</td><td class="cross">❌</td><td class="cross">❌</td><td class="check">✅</td><td class="cross">❌</td><td class="cross">❌</td><td class="cross">❌</td></tr>
+        <tr><td>Fully open source</td><td class="check">✅</td><td class="warn">Partial</td><td class="cross">❌</td><td class="cross">❌</td><td class="check">✅</td><td class="cross">❌</td><td class="cross">❌</td><td class="cross">❌</td></tr>
+        <tr><td>Argon2id KDF</td><td class="check">✅</td><td class="check">✅</td><td class="cross">❌</td><td class="cross">❌</td><td class="warn">Plugin</td><td class="cross">❌</td><td class="check">✅</td><td class="cross">❌</td></tr>
+        <tr><td>XChaCha20 encryption</td><td class="check">✅</td><td class="cross">❌</td><td class="cross">❌</td><td class="cross">❌</td><td class="cross">❌</td><td class="cross">❌</td><td class="check">✅</td><td class="cross">❌</td></tr>
+        <tr><td>Static crypto library</td><td class="check">✅</td><td class="cross">❌</td><td class="cross">❌</td><td class="cross">❌</td><td class="cross">❌</td><td class="cross">❌</td><td class="cross">❌</td><td class="cross">❌</td></tr>
+        <tr><td>TOTP / 2FA codes</td><td class="check">✅</td><td class="check">✅</td><td class="check">✅</td><td class="check">✅</td><td class="warn">Plugin</td><td class="check">✅</td><td class="check">✅</td><td class="check">✅</td></tr>
+        <tr><td>Custom fields</td><td class="check">✅</td><td class="check">✅</td><td class="check">✅</td><td class="check">✅</td><td class="check">✅</td><td class="check">✅</td><td class="check">✅</td><td class="check">✅</td></tr>
+        <tr><td>Password health report</td><td class="check">✅</td><td class="check">✅</td><td class="check">✅</td><td class="check">✅</td><td class="warn">Plugin</td><td class="check">✅</td><td class="check">✅</td><td class="check">✅</td></tr>
+        <tr><td>Trash / Soft delete</td><td class="check">✅</td><td class="check">✅</td><td class="check">✅</td><td class="check">✅</td><td class="cross">❌</td><td class="check">✅</td><td class="check">✅</td><td class="check">✅</td></tr>
+        <tr><td>Folders / Categories</td><td class="check">✅</td><td class="check">✅</td><td class="check">✅</td><td class="check">✅</td><td class="check">✅</td><td class="check">✅</td><td class="check">✅</td><td class="check">✅</td></tr>
+        <tr><td>CSV export</td><td class="check">✅</td><td class="check">✅</td><td class="check">✅</td><td class="check">✅</td><td class="check">✅</td><td class="check">✅</td><td class="check">✅</td><td class="check">✅</td></tr>
+        <tr><td>Browser extension</td><td class="check">✅</td><td class="check">✅</td><td class="check">✅</td><td class="check">✅</td><td class="warn">Plugin</td><td class="check">✅</td><td class="check">✅</td><td class="check">✅</td></tr>
+        <tr><td>BIP-39 backup</td><td class="check">✅</td><td class="cross">❌</td><td class="cross">❌</td><td class="cross">❌</td><td class="cross">❌</td><td class="cross">❌</td><td class="cross">❌</td><td class="cross">❌</td></tr>
+        <tr><td>Ransomware detection</td><td class="check">✅</td><td class="cross">❌</td><td class="cross">❌</td><td class="cross">❌</td><td class="cross">❌</td><td class="cross">❌</td><td class="cross">❌</td><td class="cross">❌</td></tr>
+        <tr><td>Known breach</td><td class="check">None</td><td>2023 minor</td><td class="check">None</td><td class="cross"><b>2022 breach</b></td><td class="check">N/A</td><td>2019 breach</td><td class="check">None</td><td>2023 breach</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p style="margin-top:1rem;color:var(--muted);font-size:0.82rem;">LastPass 2022: attackers stole encrypted vault data + password hints. With LSPV there is no server to breach — your vault never leaves your disk.</p>
+</section>
+
+<hr class="divider" />
+
+<!-- INSTALL -->
+<section class="section" id="install">
+  <div class="section-title">Get started in 60 seconds</div>
+  <div class="section-sub">No account creation. No email verification. Just download and run.</div>
+  <div class="install-grid">
+    <div class="install-card">
+      <h3>🪟 Windows</h3>
+      <div class="steps">
+        <ol>
+          <li>Download <code>..._x64-setup.exe</code> from <a href="https://github.com/RakinSV/local-security-pass-vault/releases">Releases</a></li>
+          <li>Run the installer — no admin rights required</li>
+          <li>Launch <strong>Local Security Pass Vault</strong> from Start menu</li>
+          <li>Click <strong>+ New Vault</strong> and set a strong master password</li>
+        </ol>
+      </div>
+      <div style="margin-top:1rem;">
+        <a href="https://github.com/RakinSV/local-security-pass-vault/releases/latest" class="btn btn-primary" style="font-size:0.85rem;">⬇ Download .exe</a>
+      </div>
+    </div>
+    <div class="install-card">
+      <h3>🐧 Linux</h3>
+      <div class="steps">
+        <pre><code>chmod +x lspv-x86_64.AppImage
+./lspv-x86_64.AppImage</code></pre>
+      </div>
+      <div style="margin-top:1rem;">
+        <a href="https://github.com/RakinSV/local-security-pass-vault/releases/latest" class="btn btn-ghost" style="font-size:0.85rem;">⬇ Download .AppImage</a>
+      </div>
+    </div>
+    <div class="install-card">
+      <h3>🔧 Build from Source</h3>
+      <div class="steps">
+        <pre><code>git clone https://github.com/RakinSV/\
+  local-security-pass-vault.git
+cd local-security-pass-vault
+cargo build && cargo test
+cd desktop && npm i && npm run tauri build</code></pre>
+      </div>
+      <p style="font-size:0.82rem;color:var(--muted);margin-top:0.5rem;">Requires Rust 1.96+ and Node.js 20+</p>
+    </div>
+  </div>
+</section>
+
+<hr class="divider" />
+
+<!-- DONATE -->
+<div class="donate-section">
+  <div style="font-size:2rem;margin-bottom:0.75rem;">₿</div>
+  <div style="font-size:1.3rem;font-weight:700;margin-bottom:0.5rem;">Support the Project</div>
+  <p style="color:var(--muted);max-width:500px;margin:0 auto 1rem;">LSPV is built in spare time, no funding, no company. If it keeps your data safe, consider a Bitcoin donation — it helps keep the project alive and open-source.</p>
+  <div class="btc-address">bc1qwnkyez3nv86dry54dqfjjtav29qqq72h69pevw</div>
+  <p style="margin-top:1rem;color:var(--muted);font-size:0.85rem;">No pressure. A ⭐ on GitHub also helps a lot.</p>
+</div>
+
+<!-- FOOTER -->
+<footer>
+  <p>
+    <a href="https://github.com/RakinSV/local-security-pass-vault">GitHub</a> ·
+    <a href="https://github.com/RakinSV/local-security-pass-vault/releases">Releases</a> ·
+    <a href="https://github.com/RakinSV/local-security-pass-vault/wiki">Wiki</a> ·
+    <a href="https://github.com/RakinSV/local-security-pass-vault/blob/main/LICENSE">GPL-3.0</a>
+  </p>
+  <p style="margin-top:0.5rem;">© 2026 LSPV Contributors · Built with Rust 🦀 + Tauri 2 + libsodium</p>
+</footer>
+
+</body>
+</html>

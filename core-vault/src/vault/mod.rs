@@ -68,6 +68,33 @@ fn now_unix() -> i64 {
         .unwrap_or(0)
 }
 
+/// Результат проверки здоровья одного Login-пароля.
+#[derive(Debug, Serialize)]
+pub struct HealthEntry {
+    pub id: String,
+    pub title: String,
+    pub url: String,
+    pub is_weak: bool,
+    pub is_duplicate: bool,
+    pub is_old: bool,
+    pub updated_at: i64,
+}
+
+fn is_weak_password(pw: &str) -> bool {
+    if pw.len() < 8 {
+        return true;
+    }
+    let has_upper = pw.chars().any(|c| c.is_ascii_uppercase());
+    let has_lower = pw.chars().any(|c| c.is_ascii_lowercase());
+    let has_digit = pw.chars().any(|c| c.is_ascii_digit());
+    let has_symbol = pw.chars().any(|c| !c.is_alphanumeric());
+    let variety = [has_upper, has_lower, has_digit, has_symbol]
+        .iter()
+        .filter(|&&b| b)
+        .count();
+    pw.len() < 12 || variety < 2
+}
+
 impl Vault {
     /// Создаёт новый vault в пустой директории.
     pub fn create(dir: &Path, password: &[u8], hint: Option<String>) -> Result<Vault> {
@@ -282,6 +309,27 @@ impl Vault {
         self.db.soft_delete_item(id, now_unix(), lamport as i64)
     }
 
+    /// Список мягко-удалённых записей (корзина), расшифрованных.
+    pub fn list_deleted_items(&self) -> Result<Vec<Item>> {
+        self.db.list_deleted_items()?.iter().map(|r| self.row_to_item(r)).collect()
+    }
+
+    /// Восстанавливает запись из корзины.
+    pub fn restore_item(&mut self, id: &Uuid) -> Result<()> {
+        let lamport = self.next_lamport();
+        self.db.restore_item(id, now_unix(), lamport as i64)
+    }
+
+    /// Физически удаляет одну запись из корзины (безвозвратно).
+    pub fn purge_item(&self, id: &Uuid) -> Result<()> {
+        self.db.purge_item(id)
+    }
+
+    /// Физически удаляет ВСЕ записи корзины.
+    pub fn purge_all_trash(&self) -> Result<usize> {
+        self.db.purge_deleted(i64::MAX)
+    }
+
     /// Все уникальные source_tag живых записей, отсортированные алфавитно.
     pub fn list_source_tags(&self) -> Result<Vec<String>> {
         self.db.list_source_tags()
@@ -327,6 +375,73 @@ impl Vault {
                 icon: row.icon,
                 created_at: row.created_at,
             });
+        }
+        Ok(out)
+    }
+
+    /// Удаляет папку; записи внутри получают folder_id = NULL.
+    pub fn delete_folder(&mut self, id: &Uuid) -> Result<()> {
+        self.db.delete_folder(id)?;
+        self.save()
+    }
+
+    /// Экспортирует все Login-записи в CSV (формат совместим с Chrome/Firefox export).
+    pub fn export_items_csv(&self) -> Result<String> {
+        let mut csv = String::from("name,url,username,password,note\n");
+        for item in self.list_items()? {
+            if let crate::models::ItemPayload::Login { ref url, ref username, ref password, ref notes, .. } = item.payload {
+                let esc = |s: &str| -> String {
+                    if s.contains(',') || s.contains('"') || s.contains('\n') {
+                        format!("\"{}\"", s.replace('"', "\"\""))
+                    } else {
+                        s.to_owned()
+                    }
+                };
+                csv.push_str(&format!(
+                    "{},{},{},{},{}\n",
+                    esc(&item.title), esc(url), esc(username), esc(password),
+                    esc(notes.as_deref().unwrap_or("")),
+                ));
+            }
+        }
+        Ok(csv)
+    }
+
+    /// Анализирует пароли: слабые, дублирующиеся, не обновлявшиеся 6+ месяцев.
+    pub fn health_report(&self) -> Result<Vec<HealthEntry>> {
+        use std::collections::HashMap;
+        let items = self.list_items()?;
+
+        let mut pw_counts: HashMap<String, usize> = HashMap::new();
+        for item in &items {
+            if let crate::models::ItemPayload::Login { password, .. } = &item.payload {
+                if !password.is_empty() {
+                    *pw_counts.entry(password.clone()).or_insert(0) += 1;
+                }
+            }
+        }
+
+        let now = now_unix();
+        let six_months: i64 = 180 * 24 * 3600;
+        let mut out = Vec::new();
+
+        for item in &items {
+            if let crate::models::ItemPayload::Login { url, password, .. } = &item.payload {
+                let is_weak = is_weak_password(password);
+                let is_duplicate = pw_counts.get(password).copied().unwrap_or(0) > 1;
+                let is_old = (now - item.updated_at) > six_months;
+                if is_weak || is_duplicate || is_old {
+                    out.push(HealthEntry {
+                        id: item.id.to_string(),
+                        title: item.title.clone(),
+                        url: url.clone(),
+                        is_weak,
+                        is_duplicate,
+                        is_old,
+                        updated_at: item.updated_at,
+                    });
+                }
+            }
         }
         Ok(out)
     }
