@@ -11,7 +11,7 @@ mod state;
 use tauri::{
     menu::{MenuBuilder, MenuItemBuilder, PredefinedMenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    Manager,
+    Emitter, Manager,
 };
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
