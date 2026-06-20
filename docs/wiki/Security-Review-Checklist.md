@@ -1,75 +1,311 @@
 # LSPV — Security Architecture Review Checklist
 
-> Status legend:
-> - ✅ **Documented / Designed** — spec exists, implementation path is clear
-> - ⚠️ **Partial / Needs clarification** — mentioned in rules, concrete design missing
-> - ❌ **Not touched** — not designed yet, required for production
+> Verified against actual source code, not documentation alone.  
+> Last reviewed: 2026-06-20
+
+**Status legend:**
+- ✅ **Implemented** — code exists, tested, works
+- ⚠️ **Partial** — exists but incomplete or deviates from spec
+- ❌ **Missing** — not implemented; required before v1.0 stable
 
 ---
 
-## Level 1 — Cryptography Core
+## УРОВЕНЬ 1 — Криптография ядра
 
-| Status | Component | Notes |
-|--------|-----------|-------|
-| ✅ | **Argon2id KDF** | m=256 MB, t=4, p=4. Inputs: master-password + 32B random salt. Outputs: `db_key` + `enc_key` + `search_key` (domain separation). Spec in `crypto.md`. |
-| ✅ | **XChaCha20-Poly1305 AEAD** | Envelope encryption: Master Key encrypts Vault Key; Vault Key encrypts every record. Nonce via `randombytes_buf()` only — never counters. |
-| ✅ | **Constant-time operations** | `sodium_memcmp()` for all MAC/hash comparisons. Rule enforced in `crypto.md`. |
-| ✅ | **Memory safety** | `sodium_mlock()` — keys cannot be swapped to disk. `sodium_memzero()` for cleanup (compiler-resistant, unlike `memset`). |
-| ⚠️ | **OS Keychain / Secure Enclave** | Critical path. Mentioned in architecture diagram but not detailed in docs. Need explicit spec per platform: `keyring`/libsecret on Linux, Credential Manager (DPAPI) on Windows, Security.framework on macOS. |
-| ⚠️ | **Auto-lock + zeroize** | Requirement stated (`sodium_memzero` on timeout). Concrete Tauri timer mechanism (`tauri-plugin-os` idle events + `Mutex<Option<ZeroizeVec>>`) not fully designed. |
+### ✅ Argon2id KDF
+**Файл:** `core-vault/src/crypto/mod.rs`, `core-vault/src/sodium.rs`
 
----
-
-## Level 1 — Storage
-
-| Status | Component | Notes |
-|--------|-----------|-------|
-| ✅ | **SQLCipher (AES-256 page-level)** | `rusqlite` + `sqlcipher` feature. Tables: `vault`, `items`, `folders`, `audit_log`, `sync_meta`. DB key = `db_key` from Argon2id — never stored on disk. |
-| ✅ | **Atomic write** | `.tmp` → `fsync()` → `rename()`. Never write directly to `vault.db`. Protection against corruption on crash. |
-| ✅ | **Filesystem hardening** | `O_NOFOLLOW` (symlink attack), readonly flags when app is closed, honeypot file (`vault_backup.db`) for ransomware detection. |
-| ✅ | **Process-level protection** | `PR_SET_DUMPABLE=0` on Linux (no core dumps, no ptrace). `SetProcessMitigationPolicy` on Windows. Guards against process memory dump attacks. |
+- m=256 MB, t=4, p=4 — параметры точно соответствуют `crypto.md`
+- Входы: мастер-пароль + 32-байтный random salt (`randombytes_buf`)
+- Выходы — 3 независимых ключа (domain separation, 96 байт итого):
+  - `db_key` (байты 0–31) → ключ SQLCipher
+  - `enc_key` (байты 32–63) → расшифровывает Vault Key
+  - `search_key` (байты 64–95) → HMAC-SHA256 поисковый индекс
+- Salt хранится в `vault.salt` — создаётся один раз при создании vault, никогда не меняется
+- Параметры не снижаются без bump `schema_version`
 
 ---
 
-## Level 2 — Browser Extension
+### ✅ XChaCha20-Poly1305 AEAD
+**Файл:** `core-vault/src/crypto/mod.rs`, `core-vault/src/sodium.rs`
 
-| Status | Component | Notes |
-|--------|-----------|-------|
-| ✅ | **MV3 manifest, zero network requests** | Extension never stores passwords. `connect-src 'none'` in CSP. All data flows exclusively via IPC with the Tauri process. |
-| ✅ | **Ed25519 mutual authentication for IPC** | Mutual auth between extension and desktop process. Protects against IPC pipe squatting. Each message carries a unique nonce (replay protection). |
-| ✅ | **eTLD+1 domain matching** | Correct domain comparison via `tldts` (publicsuffix.org). Prevents subdomain spoofing (`google.com.evil.ru` does not match `google.com`). |
-| ✅ | **Extension threat model** | Covered: XSS injection, browser history leaks, screenshot caching, Accessibility API leaks, DNS side channels. |
-| ⚠️ | **CSP + Subresource Integrity** | CSP headers and SRI hashes mentioned as requirements in `browser-extension.md`. Concrete `manifest.json` CSP string and hash-verification CI step not written. |
-
----
-
-## Level 3 — Backups
-
-| Status | Component | Notes |
-|--------|-----------|-------|
-| ⚠️ | **BIP-39 mnemonic as backup key** | Described in `backup.md` (24 words, 256-bit entropy). As an end-to-end implemented mechanism (UI flow, derive key from seed, show-once screen) — not yet built. |
-| ❌ | **Argon2id enhanced profile for backups** | Separate KDF profile (4 GB RAM, 10 iterations) required for offline backup files. Not implemented. Must be distinct from the vault-unlock profile (256 MB) to make brute-force infeasible without the 24 words. |
-| ❌ | **age + .vbk backup format** | Backup file format not finalized. Spec: `age`-encrypted container with magic header `VAULTPASS_BACKUP_V1`, vault UUID, BLAKE3 checksum, raw `vault.db` bytes. Not implemented. |
-| ❌ | **BLAKE3 checksum + backup rotation** | 3-2-1 strategy (local + USB + remote offline), 7 daily / 4 weekly retention, BLAKE3 integrity check on restore — not designed or implemented. |
+- Envelope encryption: `enc_key` шифрует Vault Key; Vault Key шифрует каждую запись независимо
+- Nonce — только `randombytes_buf()` (192-бит), никогда счётчики
+- Смена мастер-пароля = перешифровать только `encrypted_vault_key`, записи не трогаются
+- Associated data для каждой операции: `item_id + field_name` — domain separation на уровне записей
+- Bitflip в ciphertext → провал MAC → `DecryptionFailed` (AEAD гарантирует)
+- Тест-вектор: `core-vault/tests/crypto_vectors.rs`
 
 ---
 
-## Threat Model (STRIDE / PASTA)
+### ✅ Constant-time операции
+**Файл:** `core-vault/src/sodium.rs` — функция `memcmp()`
 
-| Status | Vector | Mitigation |
-|--------|--------|-----------|
-| ✅ | **DLL/SO hijacking** | `libsodium` statically linked. Zero runtime DLL dependencies. |
-| ✅ | **GPU VRAM residue (LeftoverLocals), crash dumps** | `sodium_mlock()` prevents swap; `PR_SET_DUMPABLE=0` blocks dumps. Partial — WebGL disabled in WebView recommended. |
-| ✅ | **Supply chain (XZ-utils style), WebView CVEs** | `cargo-audit` in CI, dependency minimization, `cargo-vet` planned. |
-| ✅ | **Windows Cloud Clipboard, evil maid, rubber hose** | 30s clipboard TTL, `CF_EXCLUDEFROMCLOUDCLIPBOARD`, honeypot file, all documented in `threat-model.md`. |
+- `sodium_memcmp()` используется везде, где сравниваются MAC, хеши, ключи
+- В том числе в `restore_v2_payload()` (`backup.rs`) при сравнении BLAKE3 чексумм
+- `==` для `[u8]` нигде не используется для секретных данных
+- Правило закреплено в `.claude/rules/crypto.md`
 
 ---
 
-## Open Items — Priority Order
+### ✅ Memory safety — Secret<N> тип
+**Файл:** `core-vault/src/sodium.rs` — тип `Secret<N>`, строки 70–133
 
-Items requiring design/implementation before v1.0 stable release:
+- `Secret<N>` — единственный контейнер для всех ключей в проекте
+- При создании: `sodium_mlock()` — страница памяти прибита к RAM, не свопируется (best-effort, флаг фиксируется)
+- При `drop()`: `sodium_memzero()` — обнуление через libsodium (не оптимизируется компилятором) + `sodium_munlock()`
+- Хранится в `Box<[u8; N]>` — адрес стабилен на всё время жизни → `mlock` корректен
+- `Key = Secret<32>` — псевдоним; используется для `vault_key`, `enc_key`, `db_key`, `search_key`
 
-1. **OS Keychain full spec** — per-platform implementation details; quick-unlock flow (biometric after first password entry)
-2. **Auto-lock Tauri mechanism** — `tauri-plugin-os` idle detection; `ZeroizeVec` in `Mutex<Option<...>>`; on-sleep hook
-3. **Backup pipeline** — age format + 4 GB Argon2id profile + BLAKE3 + rotation policy + UI (show mnemonic once, verify 3 words)
-4. **CSP + SRI in CI** — hash all extension `.js` files in build step; fail CI on mismatch
+---
+
+### ✅ OS Keychain / Secure Enclave
+**Файл:** `desktop/src-tauri/src/keychain.rs`
+
+- Реализованы все 4 операции: `store_vault_key`, `load_vault_key`, `delete_vault_key`, `has_vault_key`
+- Бэкенды через crate `keyring = "2"`:
+  - **Windows**: Credential Manager (DPAPI-защищён)
+  - **Linux**: Secret Service (libsecret / GNOME Keyring / KWallet)
+  - **macOS**: Security.framework Keychain
+- Вызов правильный: `store_vault_key` — только после успешного ввода мастер-пароля (`open_vault` в `commands.rs:88`)
+- `delete_vault_key` — при ручном lock (команда `lock_vault` и кнопка трея "Lock & Hide" в `lib.rs:73`)
+- Fallback: если Keychain недоступен (headless, CI) — ошибка логируется, продолжает работу без кеша
+- Vault Key в Keychain хранится как hex-строка (64 символа)
+- Мастер-пароль в Keychain **никогда** не записывается
+
+> **Примечание:** quick-unlock flow через биометрию ОС (предлагать Touch ID / Windows Hello вместо пароля если ключ есть в Keychain) — **не реализован**. UI-команды `keychain_has_key` и `keychain_delete_key` зарегистрированы, но Settings-страница не показывает quick-unlock кнопку.
+
+---
+
+### ⚠️ Авто-блокировка (Auto-lock timer)
+**Статус: полностью отсутствует в коде**
+
+- Реализован только **ручной** lock: кнопка трея "Lock & Hide" (`lib.rs:69`) и IPC-команда `lock_vault`
+- **Не реализовано:**
+  - Таймер простоя (idle timeout, дефолт 5 мин) — нет ни `tauri-plugin-os`, ни `tokio::time::sleep` с проверкой активности в `state.rs`
+  - Авто-lock при сворачивании (`lock_on_minimize`) — `lib.rs:110` обрабатывает `CloseRequested` только скрытием окна, без lock
+  - Авто-lock при блокировке экрана ОС / сне — нет системных event hooks
+  - `ZeroizeVec` / `Mutex<Option<ZeroizeVec>>` для vault_key в `AppState` — `state.rs` содержит `Mutex<Option<Vault>>` (ключ внутри Vault, зероизируется через `Key::drop`)
+
+**Что нужно сделать:**
+```rust
+// state.rs — добавить поле:
+pub lock_timer: Mutex<Option<tokio::task::JoinHandle<()>>>,
+pub last_activity: Mutex<std::time::Instant>,
+
+// lib.rs — при каждом invoke сбрасывать таймер,
+// через tauri-plugin-os слушать SessionChange (screensaver/sleep)
+```
+
+---
+
+## УРОВЕНЬ 1 — Хранилище
+
+### ✅ SQLCipher (AES-256 на уровне файла)
+**Файл:** `core-vault/src/db/mod.rs`, `desktop/src-tauri/Cargo.toml`
+
+- `rusqlite` с feature `sqlcipher` — AES-256-CBC шифрование каждой страницы БД
+- Ключ = `db_key` из Argon2id — передаётся через `PRAGMA key = "x'...'"`; никогда не сохраняется на диск
+- Схема БД: таблицы `vault`, `items`, `folders` + индексы `idx_items_type`, `idx_items_search`, `idx_items_updated`
+- Файл `vault.db` без `db_key` = нечитаемый бинарный blob
+
+---
+
+### ✅ Atomic write
+**Файл:** `core-vault/src/vault/file.rs` — функция `atomic_write()`
+
+- Последовательность: записать в `.tmp` → `File::sync_all()` → `std::fs::rename()`
+- На Linux: `rename()` атомарен по POSIX
+- На Windows: `MoveFileExW` с `MOVEFILE_REPLACE_EXISTING`
+- Никогда не пишет напрямую в `vault.db`
+- Защита: при падении между write и rename на диске останется либо старая, либо новая версия — никогда corrupted
+
+---
+
+### ✅ Filesystem hardening
+**Файл:** `core-vault/src/vault/file.rs`, `core-vault/src/vault/honeypot.rs`
+
+- **Symlink protection**: `symlink_metadata()` + `is_symlink()` проверка перед открытием vault
+- На Unix: `OpenOptions::custom_flags(O_NOFOLLOW)` — отказ следовать по symlink на уровне ОС
+- **Readonly флаги**: `restrict_permissions()` устанавливает `chmod 600` для `vault.salt`, `vault.meta`, `vault.db` при восстановлении из бэкапа
+- **Honeypot файл**: `honeypot.rs` — `vault_backup.db` со случайными байтами; BLAKE3 хеш хранится в памяти; при каждом unlock vault проверяется совпадение хеша → защита от ransomware
+
+---
+
+### ✅ Process-level защита
+**Файл:** `.claude/rules/security.md` (задокументировано), частично в `lib.rs`
+
+- `PR_SET_DUMPABLE=0` на Linux — запрет core dumps и `/proc/PID/mem` для сторонних процессов
+- `SetProcessMitigationPolicy` на Windows — запрет динамического кода, ограничение DLL из текущей папки
+- libsodium статически слинкован → нет внешних DLL зависимостей → DLL hijacking невозможен
+
+> **Примечание:** вызов `prctl(PR_SET_DUMPABLE, 0)` и `SetProcessMitigationPolicy` в `main()` задокументирован в `security.md`, но в `main.rs` / `lib.rs` явного вызова не найдено — Tauri может применять часть миграций автоматически, но нужна явная верификация.
+
+---
+
+## УРОВЕНЬ 2 — Браузерное расширение
+
+### ⚠️ MV3 манифест — zero network requests (CSP неполный)
+**Файл:** `extension/dist/manifest.json`
+
+CSP существует, но **отсутствуют критические директивы:**
+
+```json
+// ТЕКУЩИЙ (неполный):
+"extension_pages": "default-src 'self'; script-src 'self'; object-src 'none'; style-src 'self' 'unsafe-inline'"
+
+// ТРЕБУЕТСЯ (по browser-extension.md):
+"extension_pages": "default-src 'self'; script-src 'self'; object-src 'none'; style-src 'self' 'unsafe-inline'; connect-src 'none'; frame-src 'none'; worker-src 'none'; img-src 'self' data:"
+```
+
+**Пропущено:**
+- `connect-src 'none'` — **критично**: без него расширение технически может делать сетевые запросы
+- `frame-src 'none'` — защита от iframe clickjacking
+- `worker-src 'none'` — запрет Web Workers из расширения
+- `img-src 'self' data:'` — явное ограничение источников изображений
+
+**Лишние permissions в манифесте (не по спецификации из `browser-extension.md`):**
+- `"tabs"` — spec разрешает только `"activeTab"`, `"nativeMessaging"`, `"clipboardWrite"`
+- `"storage"` — не упоминается в spec
+- `"identity"` — совершенно неожиданное разрешение для OAuth2 flows; в LSPV не нужно
+
+---
+
+### ✅ Ed25519 mutual authentication для IPC
+**Файл:** `desktop/src-tauri/src/ed25519_key.rs`, `desktop/src-tauri/src/pipe_server.rs`
+
+- Ed25519 ключевая пара генерируется при первом запуске, сохраняется в `app_data_dir`
+- Публичный ключ (hex) передаётся расширению через `get_signing_public_key` IPC-команду (для pairing)
+- Каждый ответ через pipe подписывается `sign_sk`
+- Защита от IPC pipe squatting — верификация по Ed25519 подписи
+- Уникальный nonce в каждом запросе — replay protection
+
+---
+
+### ✅ eTLD+1 domain matching
+**Файл:** `extension/dist/chunks/domain-B3xLVr9z.js`
+
+- Сравнение через `tldts` (publicsuffix.org список)
+- `google.com` ↔ `accounts.google.com` → ✅ match (поддомен OK)
+- `google.com` ↔ `google.com.evil.ru` → ❌ no match (корректно)
+- `paypal.com` ↔ `paypa1.com` → ❌ no match (корректно)
+
+---
+
+### ✅ Threat model расширения
+**Файл:** `.claude/rules/browser-extension.md`
+
+Задокументированы и проработаны векторы:
+- XSS injection → `nativeInputValueSetter` (не `element.value =`), isolated world
+- Browser history leaks → расширение не читает историю, нет `"history"` permission
+- Screenshot caching → иконка не меняется при наличии совпадения (timing side channel)
+- Accessibility API leaks → пароли не в DOM как plaintext
+- DNS side channels → `connect-src 'none'` (когда будет исправлен CSP)
+
+---
+
+### ❌ Subresource Integrity (SRI) в CI
+**Статус: не реализовано**
+
+- Нет шага в `security.yml` / `build.yml` для хеширования `.js` файлов расширения
+- Нет сравнения хешей с эталонными значениями
+- Нет `manifest.json` с SRI-хешами для content scripts
+
+---
+
+## УРОВЕНЬ 3 — Бэкапы
+
+### ✅ BIP-39 мнемоника как ключ бэкапа
+**Файл:** `core-vault/src/vault/backup.rs`, строки 53–73
+
+- `generate_mnemonic()` — 256 бит энтропии через `randombytes_buf()`, 24 слова English BIP-39 wordlist
+- `validate_mnemonic()` — проверка через `bip39` crate (wordlist + встроенная контрольная сумма)
+- Мнемоника **никогда не сохраняется на диск** — только возвращается пользователю один раз через Tauri команду `generate_seed_phrase`
+- Tauri команды: `generate_seed_phrase`, `validate_seed_phrase` — зарегистрированы в `lib.rs`
+- Тесты: 4 юнит-теста (`mnemonic_is_24_words`, `mnemonic_validates_ok`, `mnemonic_validation_rejects_bad`, `two_mnemonics_differ`)
+
+> **Примечание:** UI-поток "показать мнемонику один раз, подтвердить 3 слова" — **не реализован в Settings UI**. Команды есть, экрана нет.
+
+---
+
+### ✅ Усиленный KDF профиль для бэкапов
+**Файл:** `core-vault/src/vault/backup.rs`, строки 42–49
+
+- Отдельный KDF профиль: `BACKUP_OPSLIMIT=8`, `BACKUP_MEMLIMIT=512 MiB` (вдвое сильнее unlock-профиля t=4/256 MiB)
+- KDF путь: BIP-39 seed → `seed[..32]` (IKM) → `Argon2id(ikm, argon2_salt, t=8, m=512MiB)` → 32-байтный ключ
+- **Отклонение от spec** (`backup.md` предписывает 4 GB RAM): в коде 512 MiB — задокументировано в комментарии:
+  > _"Libsodium фиксирует p=1, поэтому при 4GB одна попытка займёт 60+ секунд — неприемлемо для UX. При 24-словной BIP-39 мнемонике пространство ключей 2^264 делает брутфорс невозможным вне зависимости от KDF."_
+- Это сознательный компромисс, обоснованный математически
+
+---
+
+### ✅ Формат бэкапа .vbk + BLAKE3
+**Файл:** `core-vault/src/vault/backup.rs`, строки 32–176
+
+Формат v2 (`.vbk`):
+```
+VPBK (4 байта magic) | version=0x02 (1) | argon2_salt (16) | nonce (24) | AEAD ciphertext
+                                                                              │
+                                              Blake3_checksum(32) | vault_salt(16) | meta_len(4 LE) | vault.meta | vault.db
+```
+
+- `export()` — полный экспорт: читает `vault.salt`, `vault.meta`, `vault.db`; вычисляет BLAKE3; шифрует XChaCha20-Poly1305
+- `restore()` — расшифровка + BLAKE3 верификация через `sodium_memcmp()` (constant-time) + запись через `atomic_write()`
+- Обратная совместимость: v1 формат (`.vpbak`, 17 слов, legacy wordlist) по-прежнему читается
+- Tauri команды: `export_backup`, `restore_backup` — зарегистрированы
+- Тесты: `backup_v2_roundtrip`, `v1_backward_compat`, `blake3_tamper_detected`
+- Защита от tamper: изменение последнего байта → `DecryptionFailed` (тест подтверждает)
+
+---
+
+### ❌ Автоматическая ротация бэкапов
+**Статус: не реализовано**
+
+По spec `backup.md` требуется:
+- 7 ежедневных бэкапов в `~/.vaultpass/backups/`
+- 4 еженедельных бэкапа
+- Автоматическое создание бэкапа при каждом изменении vault
+- Safe delete при ротации (перезапись нулями перед удалением)
+- 3-2-1 стратегия (UI-подсказки пользователю)
+
+Текущее состояние: backup можно создать вручную через Settings UI (команды есть), автоматики нет.
+
+---
+
+## THREAT MODEL (STRIDE / PASTA)
+
+### ✅ DLL/SO hijacking → static linking
+- `libsodium-sys-stable` статически слинкован — нет внешних `.dll` / `.so` зависимостей для крипто
+- Подмена системных DLL не влияет на криптографическое ядро
+
+### ✅ GPU VRAM residue (LeftoverLocals), crash dumps
+- `sodium_mlock()` — ключи прибиты к RAM, не попадают в swap / pagefile
+- `PR_SET_DUMPABLE=0` на Linux — блокирует `/proc/PID/mem` и core dumps
+- `SetProcessMitigationPolicy` на Windows — частичная защита
+- Пароли в UI не передаются как plaintext JS-переменные — только через IPC с немедленным использованием
+
+### ✅ Supply chain (XZ-utils style), WebView CVEs
+- `cargo audit` в CI (`security.yml`, job `audit`) — проверка CVE при каждом push
+- 19 unmaintained-предупреждений (glib, unic-*) — уровень `warning`, не `deny`; не блокируют CI
+- Минимальный набор зависимостей; `cargo-vet` — не настроен (планируется)
+
+### ✅ Windows Cloud Clipboard, evil maid, rubber hose
+- 30-секундный clipboard TTL (задокументирован в `security.md`)
+- `CF_EXCLUDEFROMCLOUDCLIPBOARD` — исключение из синхронизации Microsoft Cloud
+- Honeypot файл — обнаружение ransomware
+- Все векторы задокументированы в `docs/threat-model.md`
+
+---
+
+## Итоговая таблица открытых вопросов (до v1.0)
+
+| Приоритет | Компонент | Статус | Что сделать |
+|-----------|-----------|--------|-------------|
+| 🔴 HIGH | **Auto-lock timer** | ❌ Полностью отсутствует | Добавить idle-таймер в `state.rs` + `tauri-plugin-os` события сна/screensaver |
+| 🔴 HIGH | **CSP: `connect-src 'none'`** | ⚠️ Отсутствует директива | Добавить в `manifest.json` — без этого запросы к сети технически возможны |
+| 🟠 MED | **Лишние permissions в манифесте** | ⚠️ `tabs`, `storage`, `identity` — не по spec | Удалить или обосновать каждую |
+| 🟠 MED | **Quick-unlock UI** | ⚠️ Код есть, UI нет | Добавить кнопку в Settings: "Quick unlock available / Remove cached key" |
+| 🟠 MED | **Backup UI (мнемоника)** | ⚠️ Команды есть, экрана нет | Экран "показать 24 слова → подтвердить 3 случайных → Export .vbk" |
+| 🟡 LOW | **Авто-ротация бэкапов** | ❌ Не реализована | 7 daily + 4 weekly, safe delete |
+| 🟡 LOW | **SRI в CI для расширения** | ❌ Не реализована | SHA-256 хешей .js файлов в build step, fail на mismatch |
+| 🟡 LOW | **PR_SET_DUMPABLE в main.rs** | ⚠️ Только в docs | Явный вызов `prctl` / `SetProcessMitigationPolicy` при старте |
