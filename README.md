@@ -3,7 +3,7 @@
 > **An open source, offline password manager that never phones home.**
 > Your vault lives on your disk, encrypted with battle-tested algorithms, audited libraries, and 8 layers of protection.
 
-[![Build](https://img.shields.io/github/actions/workflow/status/RakinSV/local-security-pass-vault/ci.yml?branch=main&label=build)](https://github.com/RakinSV/local-security-pass-vault/actions)
+[![Build](https://img.shields.io/github/actions/workflow/status/RakinSV/local-security-pass-vault/security.yml?branch=main&label=build)](https://github.com/RakinSV/local-security-pass-vault/actions/workflows/security.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Release](https://img.shields.io/github/v/release/RakinSV/local-security-pass-vault?include_prereleases&label=release)](https://github.com/RakinSV/local-security-pass-vault/releases)
 [![Crypto: Argon2id + XChaCha20](https://img.shields.io/badge/crypto-Argon2id%20%2B%20XChaCha20--Poly1305-brightgreen)](docs/adr/)
