@@ -69,7 +69,7 @@ fn full_vault_lifecycle_1000_items() {
         let mut v = Vault::create(&dir, b"correct-horse-battery-staple", None).unwrap();
         for i in 0..N {
             let id = v
-                .add_item(&format!("Item {i}"), payload_for(i), None, i % 7 == 0)
+                .add_item(&format!("Item {i}"), payload_for(i), None, i % 7 == 0, None)
                 .unwrap();
             ids.push(id);
         }
@@ -106,7 +106,7 @@ fn reopened_vault_search_works() {
     {
         let mut v = Vault::create(&dir, b"pw", None).unwrap();
         for i in 0..50 {
-            v.add_item(&format!("Site {i}"), payload_for(i), None, false)
+            v.add_item(&format!("Site {i}"), payload_for(i), None, false, None)
                 .unwrap();
         }
         v.save().unwrap();

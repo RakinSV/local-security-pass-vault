@@ -555,7 +555,7 @@ mod tests {
         let dir = tmp_dir();
         let id = {
             let mut v = Vault::create(&dir, b"master-pass", Some("hint".into())).unwrap();
-            let id = v.add_item("GitHub", login("s3cr3t"), None, false).unwrap();
+            let id = v.add_item("GitHub", login("s3cr3t"), None, false, None).unwrap();
             v.save().unwrap();
             id
         };
@@ -590,8 +590,8 @@ mod tests {
     fn search_finds_item() {
         let dir = tmp_dir();
         let mut v = Vault::create(&dir, b"pw", None).unwrap();
-        v.add_item("My Bank", login("a"), None, false).unwrap();
-        v.add_item("GitHub", login("b"), None, false).unwrap();
+        v.add_item("My Bank", login("a"), None, false, None).unwrap();
+        v.add_item("GitHub", login("b"), None, false, None).unwrap();
         let found = v.search("my bank").unwrap();
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].title, "My Bank");
@@ -603,7 +603,7 @@ mod tests {
         let dir = tmp_dir();
         let id = {
             let mut v = Vault::create(&dir, b"old-pass", None).unwrap();
-            let id = v.add_item("Email", login("p"), None, false).unwrap();
+            let id = v.add_item("Email", login("p"), None, false, None).unwrap();
             v.change_master_password(b"old-pass", b"new-pass").unwrap();
             id
         };
@@ -646,7 +646,7 @@ mod tests {
     fn delete_hides_item() {
         let dir = tmp_dir();
         let mut v = Vault::create(&dir, b"pw", None).unwrap();
-        let id = v.add_item("Temp", login("x"), None, false).unwrap();
+        let id = v.add_item("Temp", login("x"), None, false, None).unwrap();
         v.delete_item(&id).unwrap();
         assert!(v.list_items().unwrap().is_empty());
         std::fs::remove_dir_all(&dir).ok();
