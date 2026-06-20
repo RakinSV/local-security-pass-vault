@@ -145,29 +145,29 @@ pub last_activity: Mutex<std::time::Instant>,
 
 ## УРОВЕНЬ 2 — Браузерное расширение
 
-### ⚠️ MV3 манифест — zero network requests (CSP неполный)
-**Файл:** `extension/dist/manifest.json`
+### ✅ MV3 манифест — zero network requests (CSP полный)
+**Файл:** `extension/public/manifest.json`, `extension/dist/manifest.json`
 
-CSP существует, но **отсутствуют критические директивы:**
+CSP содержит все требуемые директивы (исправлено в commit `b69bc6a+`):
 
 ```json
-// ТЕКУЩИЙ (неполный):
-"extension_pages": "default-src 'self'; script-src 'self'; object-src 'none'; style-src 'self' 'unsafe-inline'"
-
-// ТРЕБУЕТСЯ (по browser-extension.md):
 "extension_pages": "default-src 'self'; script-src 'self'; object-src 'none'; style-src 'self' 'unsafe-inline'; connect-src 'none'; frame-src 'none'; worker-src 'none'; img-src 'self' data:"
 ```
 
-**Пропущено:**
-- `connect-src 'none'` — **критично**: без него расширение технически может делать сетевые запросы
-- `frame-src 'none'` — защита от iframe clickjacking
-- `worker-src 'none'` — запрет Web Workers из расширения
-- `img-src 'self' data:'` — явное ограничение источников изображений
+- `connect-src 'none'` ✅ — сетевые запросы из extension pages заблокированы браузером
+- `frame-src 'none'` ✅ — iframe clickjacking невозможен
+- `worker-src 'none'` ✅ — Web Workers из расширения запрещены
+- `img-src 'self' data:` ✅ — только локальные изображения и data-URI
 
-**Лишние permissions в манифесте (не по спецификации из `browser-extension.md`):**
-- `"tabs"` — spec разрешает только `"activeTab"`, `"nativeMessaging"`, `"clipboardWrite"`
-- `"storage"` — не упоминается в spec
-- `"identity"` — совершенно неожиданное разрешение для OAuth2 flows; в LSPV не нужно
+**Permissions в манифесте — все обоснованы кодом (проверено grep по source):**
+- `"activeTab"` — базовый доступ к текущей вкладке
+- `"tabs"` — нужен для `chrome.tabs.query()` в popup (`App.tsx:47,94`) и `sendMessage` в background (`index.ts:47`)
+- `"nativeMessaging"` — IPC с десктопным приложением
+- `"clipboardWrite"` — копирование пароля по кнопке
+- `"storage"` — хранение Ed25519 public key десктопа (`native.ts:54,56,69`) и profile ID (`profile.ts:24,31`)
+- `"identity"` — `chrome.identity.getProfileUserInfo()` для определения email профиля (`profile.ts:37`, `popup/App.tsx:43`)
+
+> **Примечание:** `browser-extension.md` spec был написан до реализации profile-tracking и Ed25519 pairing. Spec обновлён не был — это расхождение между документацией и кодом, а не security проблема. Permissions минимально необходимы для реализованных функций.
 
 ---
 
@@ -301,9 +301,9 @@ VPBK (4 байта magic) | version=0x02 (1) | argon2_salt (16) | nonce (24) | A
 
 | Приоритет | Компонент | Статус | Что сделать |
 |-----------|-----------|--------|-------------|
-| 🔴 HIGH | **Auto-lock timer** | ❌ Полностью отсутствует | Добавить idle-таймер в `state.rs` + `tauri-plugin-os` события сна/screensaver |
-| 🔴 HIGH | **CSP: `connect-src 'none'`** | ⚠️ Отсутствует директива | Добавить в `manifest.json` — без этого запросы к сети технически возможны |
-| 🟠 MED | **Лишние permissions в манифесте** | ⚠️ `tabs`, `storage`, `identity` — не по spec | Удалить или обосновать каждую |
+| ✅ DONE | **Auto-lock timer** | ✅ Реализован | idle-таймер в `state.rs`, фоновый task в `lib.rs`, UI в Settings |
+| ✅ DONE | **CSP: `connect-src 'none'`** | ✅ Исправлен | `manifest.json` обновлён — все 4 директивы добавлены |
+| ✅ DONE | **Permissions в манифесте** | ✅ Обоснованы | Все используются кодом — см. раздел выше |
 | 🟠 MED | **Quick-unlock UI** | ⚠️ Код есть, UI нет | Добавить кнопку в Settings: "Quick unlock available / Remove cached key" |
 | 🟠 MED | **Backup UI (мнемоника)** | ⚠️ Команды есть, экрана нет | Экран "показать 24 слова → подтвердить 3 случайных → Export .vbk" |
 | 🟡 LOW | **Авто-ротация бэкапов** | ❌ Не реализована | 7 daily + 4 weekly, safe delete |
