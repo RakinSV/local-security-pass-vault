@@ -1381,3 +1381,95 @@ pub async fn export_items_csv(state: State<'_, AppState>, path: String) -> Resul
         .map_err(|e| AppError::Other(format!("Failed to write CSV: {e}")))?;
     Ok(())
 }
+
+// ── Screen capture protection ──────────────────────────────────────────────────
+
+/// On Windows: applies or removes WDA_EXCLUDEFROMCAPTURE so the window is
+/// invisible to screen-capture tools (OBS, PrintScreen, thumbnail cache)
+/// while a plaintext password is visible in the UI.
+///
+/// On other platforms this is a no-op — the frontend still calls it
+/// so the code path is the same everywhere.
+#[tauri::command]
+pub async fn set_screen_capture_protection(
+    window: tauri::WebviewWindow,
+    enabled: bool,
+) -> Result<(), AppError> {
+    #[cfg(windows)]
+    {
+        use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+        use windows_sys::Win32::UI::WindowsAndMessaging::SetWindowDisplayAffinity;
+
+        const WDA_NONE: u32               = 0x0000_0000;
+        const WDA_EXCLUDEFROMCAPTURE: u32 = 0x0000_0011;
+
+        let handle = window
+            .window_handle()
+            .map_err(|e| AppError::Other(e.to_string()))?;
+
+        if let RawWindowHandle::Win32(h) = handle.as_raw() {
+            let hwnd = h.hwnd.get();
+            let affinity = if enabled { WDA_EXCLUDEFROMCAPTURE } else { WDA_NONE };
+            // SAFETY: hwnd is the handle of our own window — always valid here.
+            unsafe { SetWindowDisplayAffinity(hwnd, affinity); }
+        }
+    }
+
+    let _ = (window, enabled); // suppress unused-variable warnings on non-Windows
+    Ok(())
+}
+
+// ── HaveIBeenPwned k-anonymity breach check ────────────────────────────────────
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HibpResult {
+    pub pwned_count: u64,   // 0 = not found in any breach
+    pub checked: bool,      // false if the check could not be performed
+}
+
+/// Checks whether a password appears in the HaveIBeenPwned breach database
+/// using the k-anonymity API — only the first 5 characters of the SHA-1 hash
+/// are transmitted; the server never sees the full password.
+///
+/// Returns pwned_count = 0 when not found.  checked = false when offline.
+#[tauri::command]
+pub async fn check_password_breach(password: String) -> Result<HibpResult, AppError> {
+    use sha1::{Digest, Sha1};
+
+    // Compute SHA-1 locally — never sent in full.
+    let hash_bytes = Sha1::digest(password.as_bytes());
+    let hash_hex: String = hash_bytes.iter().map(|b| format!("{b:02X}")).collect();
+    let prefix  = &hash_hex[..5];
+    let suffix  = &hash_hex[5..];
+
+    // k-anonymity: send only the 5-char prefix, receive all matching suffixes.
+    let url = format!("https://api.pwnedpasswords.com/range/{prefix}");
+
+    let body = tokio::task::spawn_blocking(move || {
+        ureq::get(&url)
+            .set("User-Agent", "VaultPass/0.2 (github.com/RakinSV/AirVault_RSV)")
+            .set("Add-Padding", "true") // prevents traffic analysis via response size
+            .call()
+            .ok()
+            .and_then(|r| r.into_string().ok())
+    })
+    .await
+    .map_err(|e| AppError::Other(e.to_string()))?;
+
+    let Some(body) = body else {
+        return Ok(HibpResult { pwned_count: 0, checked: false });
+    };
+
+    // Response lines: "SUFFIX:COUNT\r\n"
+    let pwned_count = body.lines().find_map(|line| {
+        let (s, count) = line.split_once(':')?;
+        if s.eq_ignore_ascii_case(suffix) {
+            count.trim().parse::<u64>().ok()
+        } else {
+            None
+        }
+    }).unwrap_or(0);
+
+    Ok(HibpResult { pwned_count, checked: true })
+}

@@ -286,3 +286,19 @@ export const pickCsvSavePath = () =>
 
 export const exportItemsCsv = (path: string) =>
   invoke<void>("export_items_csv", { path });
+
+// ── Screen capture protection ──────────────────────────────────────────────────
+
+export const setScreenCaptureProtection = (enabled: boolean) =>
+  invoke<void>("set_screen_capture_protection", { enabled });
+
+// ── HaveIBeenPwned breach check ────────────────────────────────────────────────
+
+export interface HibpResult {
+  pwnedCount: number;
+  checked: boolean;
+}
+
+export const checkPasswordBreach = (password: string) =>
+  invoke<HibpResult>("check_password_breach", { password });
+

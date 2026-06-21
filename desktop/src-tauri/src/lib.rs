@@ -16,12 +16,103 @@ use tauri::{
     Emitter, Manager,
 };
 
-/// Disables core dumps and ptrace on Linux to prevent memory forensics attacks.
+/// Hardens the process against memory forensics and code injection attacks.
 fn harden_process() {
     #[cfg(target_os = "linux")]
+    // SAFETY: prctl is always safe to call with these arguments.
     unsafe {
         libc::prctl(libc::PR_SET_DUMPABLE, 0, 0, 0, 0);
     }
+
+    #[cfg(target_os = "linux")]
+    harden_linux_seccomp();
+
+    #[cfg(windows)]
+    // SAFETY: Windows API calls at startup before any threads are spawned.
+    unsafe {
+        harden_windows();
+    }
+}
+
+/// Installs a seccomp-BPF blacklist that kills the thread on dangerous
+/// memory-forensics syscalls (ptrace, process_vm_readv/writev).
+#[cfg(target_os = "linux")]
+fn harden_linux_seccomp() {
+    use seccompiler::{apply_filter, BpfProgram, SeccompAction, SeccompFilter};
+    use std::collections::BTreeMap;
+
+    let arch = if cfg!(target_arch = "x86_64") {
+        seccompiler::TargetArch::x86_64
+    } else if cfg!(target_arch = "aarch64") {
+        seccompiler::TargetArch::aarch64
+    } else {
+        return; // unsupported arch — skip seccomp rather than break startup
+    };
+
+    // Blacklist: kill the thread if these syscalls are invoked.
+    let mut rules: BTreeMap<i64, Vec<seccompiler::SeccompRule>> = BTreeMap::new();
+    for &nr in &[
+        libc::SYS_ptrace,
+        libc::SYS_process_vm_readv,
+        libc::SYS_process_vm_writev,
+    ] {
+        rules.insert(nr as i64, vec![]);
+    }
+
+    let filter = match SeccompFilter::new(
+        rules,
+        SeccompAction::Allow,      // default: allow all other syscalls
+        SeccompAction::KillThread, // action on blacklisted syscall
+        arch,
+    ) {
+        Ok(f) => f,
+        Err(e) => { eprintln!("seccomp filter build failed: {e}"); return; }
+    };
+
+    let prog: BpfProgram = match filter.try_into() {
+        Ok(p) => p,
+        Err(e) => { eprintln!("seccomp BPF compile failed: {e}"); return; }
+    };
+
+    if let Err(e) = apply_filter(&prog) {
+        eprintln!("seccomp apply failed: {e}");
+    }
+}
+
+/// Applies Windows-specific process-level hardening at startup.
+#[cfg(windows)]
+unsafe fn harden_windows() {
+    use windows_sys::Win32::System::LibraryLoader::SetDllDirectoryW;
+    use windows_sys::Win32::System::Threading::{
+        SetProcessMitigationPolicy, ProcessDynamicCodePolicy, ProcessSignaturePolicy,
+    };
+
+    // Strip the current directory from the DLL search path to prevent
+    // DLL planting attacks (attacker drops a DLL next to our .exe).
+    let empty: [u16; 1] = [0];
+    SetDllDirectoryW(empty.as_ptr());
+
+    // Prohibit dynamic code (VirtualAlloc + mark-executable) — blocks
+    // shellcode injection and JIT-spray attacks against our process.
+    #[repr(C)]
+    struct DynCodePolicy { flags: u32 }
+    let dcp = DynCodePolicy { flags: 1 }; // ProhibitDynamicCode = bit 0
+    SetProcessMitigationPolicy(
+        ProcessDynamicCodePolicy,
+        &dcp as *const _ as *const std::ffi::c_void,
+        std::mem::size_of::<DynCodePolicy>(),
+    );
+
+    // Require Microsoft-signed DLLs — prevents loading unsigned DLLs
+    // that could have been placed by an attacker (DLL hijacking).
+    #[repr(C)]
+    struct SigPolicy { flags: u32 }
+    let sp = SigPolicy { flags: 1 }; // MicrosoftSignedOnly = bit 0
+    SetProcessMitigationPolicy(
+        ProcessSignaturePolicy,
+        &sp as *const _ as *const std::ffi::c_void,
+        std::mem::size_of::<SigPolicy>(),
+    );
 }
 
 /// Locks the vault (if open) and emits `vault-locked` to the frontend.
@@ -229,6 +320,8 @@ pub fn run() {
             commands::get_health_report,
             commands::pick_csv_save_path,
             commands::export_items_csv,
+            commands::set_screen_capture_protection,
+            commands::check_password_breach,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { setScreenCaptureProtection } from "../api/vault";
 
 interface Props {
   label: string;
@@ -11,6 +12,14 @@ interface Props {
 
 export function PasswordField({ label, value, onChange, placeholder, readOnly, autoFocus }: Props) {
   const [visible, setVisible] = useState(false);
+
+  function toggleVisible() {
+    const next = !visible;
+    setVisible(next);
+    // On Windows: hide this window from screen-capture tools while password
+    // is shown in plaintext.  No-op on other platforms.
+    setScreenCaptureProtection(next).catch(() => {});
+  }
 
   return (
     <div className="flex flex-col gap-1">
@@ -35,7 +44,7 @@ export function PasswordField({ label, value, onChange, placeholder, readOnly, a
         />
         <button
           type="button"
-          onClick={() => setVisible(v => !v)}
+          onClick={toggleVisible}
           className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--muted)]
                      hover:text-[var(--text)] transition-colors text-xs select-none"
           tabIndex={-1}

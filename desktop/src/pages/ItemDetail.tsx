@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { getItem, deleteItem } from "../api/vault";
+import { getItem, deleteItem, checkPasswordBreach } from "../api/vault";
 import { PasswordField } from "../components/PasswordField";
 import { TotpCode } from "../components/TotpCode";
 import type { Item, PasswordHistoryEntry } from "../types/vault";
@@ -65,6 +65,40 @@ function PasswordHistorySection({ history }: { history: PasswordHistoryEntry[] }
         </div>
       )}
     </div>
+  );
+}
+
+function HibpCheckBtn({ password }: { password: string }) {
+  const [state, setState] = useState<"idle" | "checking" | "safe" | "pwned" | "offline">("idle");
+  const [count, setCount] = useState(0);
+
+  async function check() {
+    setState("checking");
+    try {
+      const r = await checkPasswordBreach(password);
+      if (!r.checked) { setState("offline"); return; }
+      if (r.pwnedCount > 0) { setCount(r.pwnedCount); setState("pwned"); }
+      else setState("safe");
+    } catch { setState("offline"); }
+  }
+
+  if (state === "idle") {
+    return (
+      <button
+        onClick={check}
+        className="text-xs text-[var(--muted)] hover:text-amber-400 transition-colors"
+      >
+        Check breaches (HIBP)
+      </button>
+    );
+  }
+  if (state === "checking") return <span className="text-xs text-[var(--muted)]">Checking…</span>;
+  if (state === "safe")     return <span className="text-xs text-emerald-400">✓ Not found in breaches</span>;
+  if (state === "offline")  return <span className="text-xs text-[var(--muted)]">Offline — could not check</span>;
+  return (
+    <span className="text-xs text-red-400 font-medium">
+      ⚠ Compromised in {count.toLocaleString()} breach{count !== 1 ? "es" : ""}
+    </span>
   );
 }
 
@@ -170,6 +204,11 @@ export function ItemDetail({ itemId, onBack, onEdit, onDeleted }: Props) {
             <Field label="URL" value={p.url} />
             <Field label="Username" value={p.username} />
             <Field label="Password" value={p.password} secret />
+            {p.password && (
+              <div className="flex items-center gap-2 -mt-2 pl-1">
+                <HibpCheckBtn password={p.password} />
+              </div>
+            )}
             {p.totp_secret && (
               <div className="flex flex-col gap-1">
                 <div className="text-xs font-medium text-[var(--muted)] uppercase tracking-wide">2FA Code</div>
