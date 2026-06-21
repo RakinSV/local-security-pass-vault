@@ -43,12 +43,14 @@ windows-sys = { version = "0.52", features = [
     "Win32_System_Threading",
     "Win32_System_LibraryLoader",
     "Win32_UI_WindowsAndMessaging",
+    "Win32_System_RemoteDesktop",
 ] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 rfd          = { version = "0.14", default-features = false, features = ["gtk3"] }
 libc         = "0.2"
 seccompiler  = "0.4"
+zbus         = { version = "4", default-features = false, features = ["tokio"] }
 
 [lints.clippy]
 unwrap_used = "warn"

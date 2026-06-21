@@ -780,6 +780,7 @@ fn set_autostart_impl(_enable: bool) -> Result<(), AppError> {
 pub struct AutoLockSettings {
     pub secs: u64,
     pub lock_on_minimize: bool,
+    pub lock_on_screensaver: bool,
 }
 
 /// Returns the current auto-lock settings.
@@ -788,19 +789,22 @@ pub async fn get_auto_lock_settings(state: State<'_, AppState>) -> Result<AutoLo
     Ok(AutoLockSettings {
         secs: state.auto_lock_secs.load(Ordering::Relaxed),
         lock_on_minimize: state.lock_on_minimize.load(Ordering::Relaxed),
+        lock_on_screensaver: state.lock_on_screensaver.load(Ordering::Relaxed),
     })
 }
 
-/// Updates the auto-lock timeout and lock-on-minimize flag.
-/// `secs = 0` disables auto-lock.
+/// Updates the auto-lock timeout, lock-on-minimize, and lock-on-screensaver flags.
+/// `secs = 0` disables idle auto-lock.
 #[tauri::command]
 pub async fn set_auto_lock_settings(
     state: State<'_, AppState>,
     secs: u64,
     lock_on_minimize: bool,
+    lock_on_screensaver: bool,
 ) -> Result<(), AppError> {
     state.auto_lock_secs.store(secs, Ordering::Relaxed);
     state.lock_on_minimize.store(lock_on_minimize, Ordering::Relaxed);
+    state.lock_on_screensaver.store(lock_on_screensaver, Ordering::Relaxed);
     Ok(())
 }
 

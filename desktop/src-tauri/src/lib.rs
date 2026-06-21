@@ -115,6 +115,107 @@ unsafe fn harden_windows() {
     );
 }
 
+// ── Screen-lock watchers ──────────────────────────────────────────────────────
+
+/// Windows: polling thread that detects screensaver activation and workstation
+/// lock by calling GetSystemMetrics / OpenInputDesktop every 5 seconds.
+/// Does not require a message-loop window — purely polling.
+#[cfg(windows)]
+fn start_windows_session_watcher(app: tauri::AppHandle) {
+    std::thread::spawn(move || {
+        use std::sync::atomic::Ordering;
+
+        extern "system" {
+            fn GetSystemMetrics(nIndex: i32) -> i32;
+            fn OpenInputDesktop(dwFlags: u32, fInherit: i32, dwDesiredAccess: u32) -> isize;
+            fn CloseDesktop(hDesktop: isize) -> i32;
+        }
+        // SM_SCREENSAVERRUNNING = 114: non-zero while the screensaver is running.
+        const SM_SCREENSAVERRUNNING: i32 = 114;
+        // OpenInputDesktop needs at minimum DESKTOP_SWITCHDESKTOP (0x0100).
+        const DESKTOP_SWITCHDESKTOP: u32 = 0x0100;
+
+        let mut was_protected = false;
+
+        loop {
+            std::thread::sleep(Duration::from_secs(5));
+
+            // Screensaver running?
+            let screensaver = unsafe { GetSystemMetrics(SM_SCREENSAVERRUNNING) } != 0;
+
+            // Workstation locked? OpenInputDesktop returns NULL when the session
+            // is on the secure desktop (Win+L or Ctrl+Alt+Del locked screen).
+            let hdesk = unsafe { OpenInputDesktop(0, 0, DESKTOP_SWITCHDESKTOP) };
+            let locked = hdesk == 0;
+            if hdesk != 0 {
+                unsafe { CloseDesktop(hdesk); }
+            }
+
+            let protected = screensaver || locked;
+            if protected && !was_protected {
+                was_protected = true;
+                let state = app.state::<state::AppState>();
+                if state.lock_on_screensaver.load(Ordering::Relaxed) {
+                    lock_vault_internal(&app);
+                }
+            } else if !protected {
+                was_protected = false;
+            }
+        }
+    });
+}
+
+/// Linux: async task that subscribes to org.freedesktop.ScreenSaver (and
+/// org.gnome.ScreenSaver) D-Bus ActiveChanged signals via zbus.
+#[cfg(target_os = "linux")]
+async fn watch_linux_screensaver(app: tauri::AppHandle) {
+    use std::sync::atomic::Ordering;
+
+    if let Err(e) = watch_linux_screensaver_inner(&app).await {
+        eprintln!("[screensaver] D-Bus watcher exited: {e}");
+    }
+}
+
+#[cfg(target_os = "linux")]
+async fn watch_linux_screensaver_inner(
+    app: &tauri::AppHandle,
+) -> Result<(), Box<dyn std::error::Error>> {
+    use zbus::{Connection, MatchRule, MessageStream};
+    use futures_util::StreamExt as _;
+    use std::sync::atomic::Ordering;
+
+    let conn = Connection::session().await?;
+
+    for iface in &["org.freedesktop.ScreenSaver", "org.gnome.ScreenSaver"] {
+        let rule = MatchRule::builder()
+            .msg_type(zbus::message::Type::Signal)
+            .interface(*iface)?
+            .member("ActiveChanged")?
+            .build();
+        conn.add_match_rule(rule).await.ok();
+    }
+
+    let mut stream = MessageStream::from(&conn);
+    while let Some(msg) = stream.next().await {
+        let msg = msg?;
+        // Filter: only handle ActiveChanged signals
+        if msg.header().member().map(|m| m.as_str()) != Some("ActiveChanged") {
+            continue;
+        }
+        // The body is a single bool: true = screensaver/lock active.
+        if let Ok(active) = msg.body().deserialize::<bool>() {
+            if active {
+                let state = app.state::<state::AppState>();
+                if state.lock_on_screensaver.load(Ordering::Relaxed) {
+                    lock_vault_internal(app);
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
 /// Locks the vault (if open) and emits `vault-locked` to the frontend.
 fn lock_vault_internal(app: &tauri::AppHandle) {
     // `let x = ...; x` forces the match temporary to drop at `;` before `state` drops.
@@ -165,6 +266,18 @@ pub fn run() {
             tauri::async_runtime::spawn(async move {
                 pipe_server::run(handle).await;
             });
+
+            // ── Screen-lock / screensaver watchers ────────────────────────────
+            #[cfg(windows)]
+            start_windows_session_watcher(app.handle().clone());
+
+            #[cfg(target_os = "linux")]
+            {
+                let handle_ss = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    watch_linux_screensaver(handle_ss).await;
+                });
+            }
 
             // ── Auto-lock idle checker (every 30 s) ───────────────────────────
             let handle_al = app.handle().clone();

@@ -18,6 +18,8 @@ pub struct AppState {
     pub auto_lock_secs: AtomicU64,
     /// Lock vault when window is hidden/minimized.
     pub lock_on_minimize: AtomicBool,
+    /// Lock vault when the OS screen is locked or screensaver activates.
+    pub lock_on_screensaver: AtomicBool,
     /// Timestamp of last user activity — reset by activity_ping and open_vault.
     pub last_activity: Mutex<Instant>,
 }
@@ -31,6 +33,7 @@ impl Default for AppState {
             sign_pk_hex: Mutex::new(None),
             auto_lock_secs: AtomicU64::new(300),
             lock_on_minimize: AtomicBool::new(false),
+            lock_on_screensaver: AtomicBool::new(true),
             last_activity: Mutex::new(Instant::now()),
         }
     }
@@ -56,5 +59,9 @@ impl AppState {
 
     pub fn lock_on_minimize(&self) -> bool {
         self.lock_on_minimize.load(Ordering::Relaxed)
+    }
+
+    pub fn lock_on_screensaver(&self) -> bool {
+        self.lock_on_screensaver.load(Ordering::Relaxed)
     }
 }

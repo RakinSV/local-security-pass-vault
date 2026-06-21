@@ -107,13 +107,17 @@ export const setAutostart = (enable: boolean) =>
 export interface AutoLockSettings {
   secs: number;
   lockOnMinimize: boolean;
+  lockOnScreensaver: boolean;
 }
 
 export const getAutoLockSettings = () =>
   invoke<AutoLockSettings>("get_auto_lock_settings");
 
-export const setAutoLockSettings = (secs: number, lockOnMinimize: boolean) =>
-  invoke<void>("set_auto_lock_settings", { secs, lockOnMinimize });
+export const setAutoLockSettings = (
+  secs: number,
+  lockOnMinimize: boolean,
+  lockOnScreensaver: boolean,
+) => invoke<void>("set_auto_lock_settings", { secs, lockOnMinimize, lockOnScreensaver });
 
 export const activityPing = () =>
   invoke<void>("activity_ping");

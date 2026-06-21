@@ -481,9 +481,10 @@ function SecurityTab() {
   const [pwSuccess, setPwSuccess] = useState(false);
   const [pwLoading, setPwLoading] = useState(false);
 
-  const [lockSecs,       setLockSecs]       = useState(300);
-  const [lockOnMinimize, setLockOnMinimize] = useState(false);
-  const [alLoading,      setAlLoading]      = useState(true);
+  const [lockSecs,          setLockSecs]          = useState(300);
+  const [lockOnMinimize,    setLockOnMinimize]    = useState(false);
+  const [lockOnScreensaver, setLockOnScreensaver] = useState(true);
+  const [alLoading,         setAlLoading]         = useState(true);
   const [alStatus,       setAlStatus]       = useState<{ type: "success" | "error"; msg: string } | null>(null);
 
   const [kcStatus,    setKcStatus]    = useState<KeychainVaultStatus | null>(null);
@@ -491,7 +492,7 @@ function SecurityTab() {
 
   useEffect(() => {
     getAutoLockSettings()
-      .then(s => { setLockSecs(s.secs); setLockOnMinimize(s.lockOnMinimize); })
+      .then(s => { setLockSecs(s.secs); setLockOnMinimize(s.lockOnMinimize); setLockOnScreensaver(s.lockOnScreensaver); })
       .catch(() => {})
       .finally(() => setAlLoading(false));
     keychainVaultStatus().then(setKcStatus).catch(() => {});
@@ -526,10 +527,10 @@ function SecurityTab() {
     }
   }
 
-  async function saveAutoLock(secs: number, lom: boolean) {
+  async function saveAutoLock(secs: number, lom: boolean, los: boolean) {
     setAlStatus(null);
     try {
-      await setAutoLockSettings(secs, lom);
+      await setAutoLockSettings(secs, lom, los);
       setAlStatus({ type: "success", msg: secs === 0 ? "Auto-lock disabled." : `Auto-lock set to ${LOCK_TIMEOUT_OPTIONS.find(o => o.secs === secs)?.label ?? secs + "s"}.` });
     } catch (err) {
       setAlStatus({ type: "error", msg: String(err) });
@@ -556,7 +557,7 @@ function SecurityTab() {
               <button
                 key={opt.secs}
                 disabled={alLoading}
-                onClick={async () => { setLockSecs(opt.secs); await saveAutoLock(opt.secs, lockOnMinimize); }}
+                onClick={async () => { setLockSecs(opt.secs); await saveAutoLock(opt.secs, lockOnMinimize, lockOnScreensaver); }}
                 className={`py-2 rounded-lg text-sm font-medium border transition-colors ${
                   lockSecs === opt.secs
                     ? "bg-[var(--accent)] text-white border-[var(--accent)]"
@@ -578,13 +579,33 @@ function SecurityTab() {
             </div>
             <button
               disabled={alLoading}
-              onClick={async () => { const next = !lockOnMinimize; setLockOnMinimize(next); await saveAutoLock(lockSecs, next); }}
+              onClick={async () => { const next = !lockOnMinimize; setLockOnMinimize(next); await saveAutoLock(lockSecs, next, lockOnScreensaver); }}
               className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 ${
                 lockOnMinimize ? "bg-[var(--accent)]" : "bg-[var(--border)]"
               }`}
             >
               <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow-sm
                                 transition-transform ${lockOnMinimize ? "translate-x-5" : "translate-x-0"}`} />
+            </button>
+          </div>
+
+          {/* Lock on screen lock / screensaver */}
+          <div className="flex items-center justify-between gap-4 pt-1 border-t border-[var(--border)]">
+            <div>
+              <div className="font-medium text-sm">Lock on screen lock</div>
+              <div className="text-[var(--muted)] text-xs mt-0.5">
+                Lock vault when the OS screen locks or screensaver activates.
+              </div>
+            </div>
+            <button
+              disabled={alLoading}
+              onClick={async () => { const next = !lockOnScreensaver; setLockOnScreensaver(next); await saveAutoLock(lockSecs, lockOnMinimize, next); }}
+              className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 ${
+                lockOnScreensaver ? "bg-[var(--accent)]" : "bg-[var(--border)]"
+              }`}
+            >
+              <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow-sm
+                                transition-transform ${lockOnScreensaver ? "translate-x-5" : "translate-x-0"}`} />
             </button>
           </div>
         </div>
