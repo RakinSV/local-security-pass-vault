@@ -147,12 +147,12 @@ export function ExtensionInstaller() {
                 </div>
               </label>
 
-              {/* Firefox profile picker */}
+              {/* Profile picker (Firefox: install per-profile; Chromium: informational) */}
               {isSelected && hasProfiles && (
                 <div className="border-t border-[var(--border)] px-4 py-2.5 flex flex-col gap-1.5
                                 bg-[var(--bg)]">
                   <div className="text-[10px] text-[var(--muted)] uppercase tracking-wide font-medium mb-0.5">
-                    Install to profiles:
+                    {browser.id === "firefox" ? "Install to profiles:" : "Detected profiles (installs to all via registry):"}
                   </div>
                   {browser.profiles.map(profile => {
                     const isProfileSelected =

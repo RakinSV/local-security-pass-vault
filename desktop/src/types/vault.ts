@@ -82,6 +82,7 @@ export interface ItemSummary {
   id: string;
   itemType: ItemType;
   title: string;
+  subtitle: string | null;
   folderId: string | null;
   favorite: boolean;
   updatedAt: number;

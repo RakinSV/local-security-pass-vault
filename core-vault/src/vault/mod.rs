@@ -330,6 +330,11 @@ impl Vault {
         self.db.purge_deleted(i64::MAX)
     }
 
+    /// Физически удаляет записи корзины старше `cutoff_unix` секунд (Unix timestamp).
+    pub fn purge_old_trash(&self, cutoff_unix: i64) -> Result<usize> {
+        self.db.purge_deleted(cutoff_unix)
+    }
+
     /// Все уникальные source_tag живых записей, отсортированные алфавитно.
     pub fn list_source_tags(&self) -> Result<Vec<String>> {
         self.db.list_source_tags()

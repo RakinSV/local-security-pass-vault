@@ -81,7 +81,7 @@ fn detect_chromium(id: &str, name: &str, data_dir: Option<PathBuf>) -> DetectedB
         name: name.into(),
         installed,
         profiles,
-        supports_per_profile: false, // Chrome ext installs per-user, not per-profile
+        supports_per_profile: true, // Show profiles for info; registry install is still per-user
     }
 }
 

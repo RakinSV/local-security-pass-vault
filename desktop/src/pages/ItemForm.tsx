@@ -2,7 +2,8 @@ import { useState, useEffect } from "react";
 import { PasswordField } from "../components/PasswordField";
 import { TotpSetup } from "../components/TotpSetup";
 import { PasswordGenerator } from "../components/PasswordGenerator";
-import { createItem, updateItem, getItem } from "../api/vault";
+import { createItem, updateItem, getItem, listFolders } from "../api/vault";
+import type { FolderInfo } from "../api/vault";
 import type { ItemType, ItemPayload } from "../types/vault";
 
 const TYPES: { value: ItemType; label: string }[] = [
@@ -43,11 +44,17 @@ export function ItemForm({ editId, defaultType = "login", onSaved, onBack }: Pro
   const [title, setTitle] = useState("");
   const [payload, setPayload] = useState<ItemPayload>(emptyPayload(defaultType));
   const [favorite, setFavorite] = useState(false);
+  const [folderId, setFolderId] = useState<string | null>(null);
   const [sourceTag, setSourceTag] = useState<string>("");
+  const [folders, setFolders] = useState<FolderInfo[]>([]);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [showGenerator, setShowGenerator] = useState(false);
   const [loading, setLoading] = useState(!!editId);
+
+  useEffect(() => {
+    listFolders().then(setFolders).catch(() => {});
+  }, []);
 
   useEffect(() => {
     if (!editId) return;
@@ -58,6 +65,7 @@ export function ItemForm({ editId, defaultType = "login", onSaved, onBack }: Pro
         setItemType(item.itemType);
         setPayload(item.payload);
         setFavorite(item.favorite);
+        setFolderId(item.folderId);
         setSourceTag(item.sourceTag ?? "");
       })
       .catch(err => setError(String(err)))
@@ -82,10 +90,10 @@ export function ItemForm({ editId, defaultType = "login", onSaved, onBack }: Pro
     const tag = sourceTag.trim() || null;
     try {
       if (editId) {
-        await updateItem(editId, title, payload, null, favorite, tag);
+        await updateItem(editId, title, payload, folderId, favorite, tag);
         onSaved(editId);
       } else {
-        const id = await createItem(title, payload, null, favorite, tag);
+        const id = await createItem(title, payload, folderId, favorite, tag);
         onSaved(id);
       }
     } catch (err) {
@@ -433,6 +441,28 @@ export function ItemForm({ editId, defaultType = "login", onSaved, onBack }: Pro
 
               <TextareaField label="Notes (optional)" value={p.notes ?? ""} onChange={v => setField("notes", v || null)} />
             </>
+          )}
+
+          {/* Folder assignment */}
+          {folders.length > 0 && (
+            <div className="flex flex-col gap-1 pt-1 border-t border-[var(--border)]/40 mt-1">
+              <label className="text-xs font-medium text-[var(--muted)] uppercase tracking-wide">
+                Folder (optional)
+              </label>
+              <select
+                value={folderId ?? ""}
+                onChange={e => setFolderId(e.target.value || null)}
+                className="w-full bg-[var(--bg)] border border-[var(--border)] rounded-lg px-3 py-2
+                           text-sm text-[var(--text)] focus:outline-none focus:border-[var(--accent)] transition-colors"
+              >
+                <option value="">— No folder —</option>
+                {folders.map(f => (
+                  <option key={f.id} value={f.id}>
+                    {f.icon ?? "📁"} {f.name}
+                  </option>
+                ))}
+              </select>
+            </div>
           )}
 
           {/* Source tag — optional label for all item types */}

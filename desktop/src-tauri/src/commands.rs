@@ -21,10 +21,62 @@ pub struct ItemSummaryDto {
     pub id: String,
     pub item_type: String,
     pub title: String,
+    pub subtitle: Option<String>,
     pub folder_id: Option<String>,
     pub favorite: bool,
     pub updated_at: i64,
     pub source_tag: Option<String>,
+}
+
+fn subtitle_for(payload: &ItemPayload) -> Option<String> {
+    match payload {
+        ItemPayload::Login { url, username, .. } => {
+            let domain = url
+                .trim_start_matches("https://")
+                .trim_start_matches("http://")
+                .split('/')
+                .next()
+                .unwrap_or("")
+                .trim_end_matches(':')
+                .to_string();
+            match (!domain.is_empty(), !username.is_empty()) {
+                (true,  true)  => Some(format!("{domain} · {username}")),
+                (true,  false) => Some(domain),
+                (false, true)  => Some(username.clone()),
+                (false, false) => None,
+            }
+        }
+        ItemPayload::Card { cardholder, number, .. } => {
+            let last4 = if number.len() >= 4 { &number[number.len() - 4..] } else { number.as_str() };
+            if cardholder.is_empty() {
+                Some(format!("•••• {last4}"))
+            } else {
+                Some(format!("{cardholder} · •••• {last4}"))
+            }
+        }
+        ItemPayload::Server { host, username, .. } => match username {
+            Some(u) if !u.is_empty() => Some(format!("{u}@{host}")),
+            _ => Some(host.clone()),
+        },
+        ItemPayload::Identity { first_name, last_name, email, .. } => {
+            let name_parts: Vec<&str> = [first_name.as_deref(), last_name.as_deref()]
+                .iter()
+                .filter_map(|s| s.filter(|v| !v.is_empty()))
+                .collect();
+            if !name_parts.is_empty() {
+                Some(name_parts.join(" "))
+            } else {
+                email.clone()
+            }
+        }
+        ItemPayload::SshKey { public_key, .. } => {
+            public_key.as_ref().and_then(|k| {
+                let comment = k.split_whitespace().nth(2)?;
+                Some(comment[..comment.len().min(30)].to_string())
+            })
+        }
+        ItemPayload::Note { .. } => None,
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -95,6 +147,18 @@ pub async fn open_vault(
     state.reset_activity();
     let mut dir_guard = state.vault_dir.lock().map_err(|_| AppError::LockPoisoned)?;
     *dir_guard = Some(dir);
+
+    // Auto-purge trash items older than 30 days on every vault open
+    {
+        const THIRTY_DAYS_SECS: u64 = 30 * 24 * 60 * 60;
+        if let Ok(now) = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH) {
+            let cutoff = (now.as_secs().saturating_sub(THIRTY_DAYS_SECS)) as i64;
+            if let Some(v) = guard.as_ref() {
+                let _ = v.purge_old_trash(cutoff);
+            }
+        }
+    }
+
     Ok(())
 }
 
@@ -116,14 +180,18 @@ pub async fn list_items(state: State<'_, AppState>) -> Result<Vec<ItemSummaryDto
     let items = vault.list_items()?;
     Ok(items
         .into_iter()
-        .map(|i| ItemSummaryDto {
-            id: i.id.to_string(),
-            item_type: i.item_type.as_str().to_string(),
-            title: i.title,
-            folder_id: i.folder_id.map(|u| u.to_string()),
-            favorite: i.favorite,
-            updated_at: i.updated_at,
-            source_tag: i.source_tag,
+        .map(|i| {
+            let subtitle = subtitle_for(&i.payload);
+            ItemSummaryDto {
+                id: i.id.to_string(),
+                item_type: i.item_type.as_str().to_string(),
+                title: i.title,
+                subtitle,
+                folder_id: i.folder_id.map(|u| u.to_string()),
+                favorite: i.favorite,
+                updated_at: i.updated_at,
+                source_tag: i.source_tag,
+            }
         })
         .collect())
 }
@@ -890,14 +958,18 @@ pub async fn list_deleted_items(state: State<'_, AppState>) -> Result<Vec<ItemSu
     let items = vault.list_deleted_items()?;
     Ok(items
         .into_iter()
-        .map(|i| ItemSummaryDto {
-            id: i.id.to_string(),
-            item_type: i.item_type.as_str().to_string(),
-            title: i.title,
-            folder_id: i.folder_id.map(|u| u.to_string()),
-            favorite: i.favorite,
-            updated_at: i.updated_at,
-            source_tag: i.source_tag,
+        .map(|i| {
+            let subtitle = subtitle_for(&i.payload);
+            ItemSummaryDto {
+                id: i.id.to_string(),
+                item_type: i.item_type.as_str().to_string(),
+                title: i.title,
+                subtitle,
+                folder_id: i.folder_id.map(|u| u.to_string()),
+                favorite: i.favorite,
+                updated_at: i.updated_at,
+                source_tag: i.source_tag,
+            }
         })
         .collect())
 }

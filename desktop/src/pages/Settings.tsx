@@ -31,14 +31,11 @@ import {
   restoreItem,
   purgeItem,
   purgeAllTrash,
-  listFolders,
-  addFolder,
-  deleteFolder,
   getHealthReport,
   pickCsvSavePath,
   exportItemsCsv,
 } from "../api/vault";
-import type { AutoBackupEntry, FolderInfo, HealthEntry, KeychainVaultStatus } from "../api/vault";
+import type { AutoBackupEntry, HealthEntry, KeychainVaultStatus } from "../api/vault";
 import type { BrowserConfig, ImportRow, ItemSummary, ProfileInfo } from "../types/vault";
 
 interface Props {
@@ -46,7 +43,7 @@ interface Props {
   onImported?: () => void;
 }
 
-type Tab = "general" | "security" | "backup" | "browser" | "import" | "data" | "about";
+type Tab = "general" | "security" | "backup" | "browser" | "data" | "about";
 
 export function Settings({ onBack, onImported }: Props) {
   const [tab, setTab] = useState<Tab>("general");
@@ -56,7 +53,6 @@ export function Settings({ onBack, onImported }: Props) {
     { id: "security", label: "Security" },
     { id: "backup",   label: "Backup"   },
     { id: "browser",  label: "Browser"  },
-    { id: "import",   label: "Import"   },
     { id: "data",     label: "Data"     },
     { id: "about",    label: "About"    },
   ];
@@ -95,8 +91,7 @@ export function Settings({ onBack, onImported }: Props) {
         {tab === "security" && <SecurityTab />}
         {tab === "backup"   && <BackupTab />}
         {tab === "browser"  && <BrowserTab />}
-        {tab === "import"   && <ImportTab onImported={onImported} />}
-        {tab === "data"     && <DataTab />}
+        {tab === "data"     && <DataTab onImported={onImported} />}
         {tab === "about"    && <AboutTab />}
       </div>
     </div>
@@ -912,225 +907,6 @@ function IdSection({ label, hint, defaultValue, ids, input, onInputChange, onAdd
   );
 }
 
-// ── Import Tab ────────────────────────────────────────────────────────────────
-
-function ImportTab({ onImported }: { onImported?: () => void }) {
-  const fileRef = useRef<HTMLInputElement>(null);
-  const [rows,         setRows]         = useState<ImportRow[]>([]);
-  const [error,        setError]        = useState("");
-  const [importing,    setImporting]    = useState(false);
-  const [importedCount, setImportedCount] = useState<number | null>(null);
-  const [profiles,     setProfiles]     = useState<ProfileInfo[]>([]);
-  const [sourceTag,    setSourceTag]    = useState<string>("");
-  const [retag,        setRetag]        = useState<{ old: string; new: string } | null>(null);
-
-  useEffect(() => {
-    getProfiles().then(setProfiles).catch(() => {});
-  }, []);
-
-  async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setError(""); setRows([]); setImportedCount(null);
-    try {
-      const text = await file.text();
-      const parsed = await parseImportCsv(text);
-      setRows(parsed);
-    } catch (err) {
-      setError(String(err));
-    }
-    e.target.value = "";
-  }
-
-  async function handleImport() {
-    setImporting(true); setError("");
-    try {
-      const tag = sourceTag.trim() || null;
-      const count = await importItemsFromCsv(rows, tag);
-      setImportedCount(count);
-      setRows([]);
-      onImported?.();
-    } catch (err) {
-      setError(String(err));
-    } finally {
-      setImporting(false);
-    }
-  }
-
-  async function handleRetag() {
-    if (!retag || !retag.old.trim()) return;
-    try {
-      const n = await bulkRetagItems(retag.old.trim(), retag.new.trim() || null);
-      setRetag(null);
-      onImported?.();
-      alert(`Updated ${n} item${n !== 1 ? "s" : ""}.`);
-    } catch (err) {
-      setError(String(err));
-    }
-  }
-
-  return (
-    <div className="p-6 max-w-lg mx-auto w-full flex flex-col gap-5">
-      <div>
-        <h3 className="font-semibold mb-1">Import from browser</h3>
-        <p className="text-[var(--muted)] text-sm leading-relaxed">
-          Accepts CSV exports from Chrome
-          {" "}(<span className="font-mono text-xs">chrome://password-manager → Settings → Export</span>)
-          {" "}and Firefox
-          {" "}(<span className="font-mono text-xs">about:logins → ··· → Export Logins…</span>).
-        </p>
-      </div>
-
-      <input ref={fileRef} type="file" accept=".csv,text/csv" onChange={handleFile} className="hidden" />
-
-      <button
-        onClick={() => fileRef.current?.click()}
-        className="w-full border-2 border-dashed border-[var(--border)] hover:border-[var(--accent)]
-                   rounded-xl py-8 text-sm text-[var(--muted)] hover:text-[var(--text)] transition-colors"
-      >
-        📂 Choose CSV file…
-      </button>
-
-      {error && <Alert type="error">{error}</Alert>}
-
-      {importedCount !== null && (
-        <Alert type="success">
-          ✓ Imported {importedCount} item{importedCount !== 1 ? "s" : ""} — go back to see them in your vault.
-        </Alert>
-      )}
-
-      {rows.length > 0 && (
-        <>
-          <div className="text-sm text-[var(--muted)]">{rows.length} items found:</div>
-          <div className="border border-[var(--border)] rounded-xl overflow-hidden max-h-60 overflow-y-auto">
-            <table className="w-full text-xs">
-              <thead className="sticky top-0 bg-[var(--surface)] border-b border-[var(--border)]">
-                <tr>
-                  <th className="text-left px-3 py-2 text-[var(--muted)] font-medium">Title</th>
-                  <th className="text-left px-3 py-2 text-[var(--muted)] font-medium">URL</th>
-                  <th className="text-left px-3 py-2 text-[var(--muted)] font-medium">Username</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((r, i) => (
-                  <tr key={i} className="border-b border-[var(--border)]/40 last:border-0 hover:bg-[var(--surface)]/50">
-                    <td className="px-3 py-1.5 text-[var(--text)]">{r.title}</td>
-                    <td className="px-3 py-1.5 text-[var(--muted)] truncate max-w-[130px]" title={r.url}>{r.url}</td>
-                    <td className="px-3 py-1.5 text-[var(--muted)]">{r.username}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Source tag for this import batch */}
-          <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-medium text-[var(--muted)] uppercase tracking-wide">
-              Tag these imports as (optional)
-            </label>
-            {profiles.length > 0 && (
-              <div className="flex flex-wrap gap-1.5">
-                {profiles.map(p => {
-                  const label = p.name || p.email || p.id.slice(0, 8);
-                  return (
-                    <button
-                      key={p.id}
-                      type="button"
-                      onClick={() => setSourceTag(tag => tag === label ? "" : label)}
-                      className={`px-2.5 py-1 rounded-full text-xs border transition-colors
-                        ${sourceTag === label
-                          ? "bg-[var(--accent)]/20 border-[var(--accent)] text-[var(--accent)]"
-                          : "border-[var(--border)] text-[var(--muted)] hover:text-[var(--text)]"
-                        }`}
-                    >
-                      {label}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-            <input
-              type="text"
-              value={sourceTag}
-              onChange={e => setSourceTag(e.target.value)}
-              placeholder="or type a custom label…"
-              className="w-full bg-[var(--bg)] border border-[var(--border)] rounded-lg px-3 py-2
-                         text-sm text-[var(--text)] placeholder-[var(--muted)]
-                         focus:outline-none focus:border-[var(--accent)] transition-colors"
-            />
-          </div>
-
-          <button
-            onClick={handleImport}
-            disabled={importing}
-            className="w-full bg-[var(--accent)] hover:bg-[var(--accent-hover)] disabled:opacity-40
-                       text-white font-medium py-3 rounded-xl transition-colors"
-          >
-            {importing ? "Importing…" : `Import ${rows.length} item${rows.length !== 1 ? "s" : ""}${sourceTag.trim() ? ` → "${sourceTag.trim()}"` : ""}`}
-          </button>
-        </>
-      )}
-
-      {/* Bulk retag section */}
-      <div className="border-t border-[var(--border)] pt-4 flex flex-col gap-3">
-        <h4 className="font-medium text-sm">Bulk re-tag</h4>
-        <p className="text-xs text-[var(--muted)]">
-          Rename or remove a source tag from all items at once.
-        </p>
-        {retag === null ? (
-          <button
-            type="button"
-            onClick={() => setRetag({ old: "", new: "" })}
-            className="text-sm text-[var(--accent)] hover:underline self-start"
-          >
-            + Rename or clear a tag…
-          </button>
-        ) : (
-          <div className="flex flex-col gap-2">
-            <input
-              type="text"
-              value={retag.old}
-              onChange={e => setRetag(r => r ? { ...r, old: e.target.value } : r)}
-              placeholder="Existing tag to rename"
-              className="w-full bg-[var(--bg)] border border-[var(--border)] rounded-lg px-3 py-2
-                         text-sm text-[var(--text)] placeholder-[var(--muted)]
-                         focus:outline-none focus:border-[var(--accent)] transition-colors"
-            />
-            <input
-              type="text"
-              value={retag.new}
-              onChange={e => setRetag(r => r ? { ...r, new: e.target.value } : r)}
-              placeholder="New tag name (leave empty to clear)"
-              className="w-full bg-[var(--bg)] border border-[var(--border)] rounded-lg px-3 py-2
-                         text-sm text-[var(--text)] placeholder-[var(--muted)]
-                         focus:outline-none focus:border-[var(--accent)] transition-colors"
-            />
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={() => setRetag(null)}
-                className="flex-1 border border-[var(--border)] text-[var(--muted)]
-                           hover:text-[var(--text)] py-2 rounded-xl text-sm transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleRetag}
-                disabled={!retag.old.trim()}
-                className="flex-1 bg-[var(--accent)] hover:bg-[var(--accent-hover)] disabled:opacity-40
-                           text-white font-medium py-2 rounded-xl text-sm transition-colors"
-              >
-                Apply
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
 // ── Profiles Section ──────────────────────────────────────────────────────────
 
 function timeAgo(ms: number): string {
@@ -1252,20 +1028,29 @@ function ProfilesSection({ profiles, onRename }: ProfilesSectionProps) {
 
 // ── Data Tab ──────────────────────────────────────────────────────────────────
 
-function DataTab() {
+function DataTab({ onImported }: { onImported?: () => void }) {
+  const fileRef    = useRef<HTMLInputElement>(null);
   const [trashItems, setTrashItems]   = useState<ItemSummary[]>([]);
-  const [folders, setFolders]         = useState<FolderInfo[]>([]);
-  const [health, setHealth]           = useState<HealthEntry[] | null>(null);
-  const [newFolderName, setNewFolderName] = useState("");
-  const [status, setStatus] = useState<{ type: "success" | "error"; msg: string } | null>(null);
-  const [healthLoading, setHealthLoading] = useState(false);
-  const [exportLoading, setExportLoading] = useState(false);
+  const [health,     setHealth]       = useState<HealthEntry[] | null>(null);
+  const [status,     setStatus]       = useState<{ type: "success" | "error"; msg: string } | null>(null);
+  const [healthLoading,  setHealthLoading]  = useState(false);
+  const [exportLoading,  setExportLoading]  = useState(false);
   const [refreshKey, setRefreshKey]   = useState(0);
 
+  // Import state
+  const [rows,          setRows]          = useState<ImportRow[]>([]);
+  const [parseError,    setParseError]    = useState("");
+  const [importing,     setImporting]     = useState(false);
+  const [importedCount, setImportedCount] = useState<number | null>(null);
+  const [profiles,      setProfiles]      = useState<ProfileInfo[]>([]);
+  const [sourceTag,     setSourceTag]     = useState<string>("");
+  const [retag,         setRetag]         = useState<{ old: string; new: string } | null>(null);
+
   useEffect(() => {
-    Promise.all([listDeletedItems(), listFolders()])
-      .then(([trash, fols]) => { setTrashItems(trash); setFolders(fols); })
+    listDeletedItems()
+      .then(trash => setTrashItems(trash))
       .catch(err => setStatus({ type: "error", msg: String(err) }));
+    getProfiles().then(setProfiles).catch(() => {});
   }, [refreshKey]);
 
   const refresh = () => setRefreshKey(k => k + 1);
@@ -1296,26 +1081,6 @@ function DataTab() {
     } catch (err) { setStatus({ type: "error", msg: String(err) }); }
   }
 
-  async function handleAddFolder() {
-    const name = newFolderName.trim();
-    if (!name) return;
-    try {
-      await addFolder(name);
-      setNewFolderName("");
-      refresh();
-      setStatus({ type: "success", msg: `Folder "${name}" created.` });
-    } catch (err) { setStatus({ type: "error", msg: String(err) }); }
-  }
-
-  async function handleDeleteFolder(id: string, name: string) {
-    if (!confirm(`Delete folder "${name}"? Items inside will be moved to root.`)) return;
-    try {
-      await deleteFolder(id);
-      refresh();
-      setStatus({ type: "success", msg: `Folder "${name}" deleted.` });
-    } catch (err) { setStatus({ type: "error", msg: String(err) }); }
-  }
-
   async function handleHealthReport() {
     setHealthLoading(true);
     setHealth(null);
@@ -1337,11 +1102,45 @@ function DataTab() {
     finally { setExportLoading(false); }
   }
 
-  const sectionClass = "flex flex-col gap-3 p-4 border border-[var(--border)] rounded-xl bg-[var(--surface)]";
-  const headingClass = "text-sm font-semibold text-[var(--text)]";
+  async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setParseError(""); setRows([]); setImportedCount(null);
+    try {
+      const text = await file.text();
+      const parsed = await parseImportCsv(text);
+      setRows(parsed);
+    } catch (err) { setParseError(String(err)); }
+    e.target.value = "";
+  }
+
+  async function handleImport() {
+    setImporting(true); setParseError("");
+    try {
+      const tag = sourceTag.trim() || null;
+      const count = await importItemsFromCsv(rows, tag);
+      setImportedCount(count);
+      setRows([]);
+      onImported?.();
+    } catch (err) { setParseError(String(err)); }
+    finally { setImporting(false); }
+  }
+
+  async function handleRetag() {
+    if (!retag || !retag.old.trim()) return;
+    try {
+      const n = await bulkRetagItems(retag.old.trim(), retag.new.trim() || null);
+      setRetag(null);
+      onImported?.();
+      setStatus({ type: "success", msg: `Updated ${n} item${n !== 1 ? "s" : ""}.` });
+    } catch (err) { setStatus({ type: "error", msg: String(err) }); }
+  }
+
+  const S = "flex flex-col gap-3 p-4 border border-[var(--border)] rounded-xl bg-[var(--surface)]";
+  const H = "text-sm font-semibold text-[var(--text)]";
 
   return (
-    <div className="p-4 flex flex-col gap-6 max-w-lg">
+    <div className="p-4 flex flex-col gap-6 max-w-lg w-full">
       {status && (
         <div className={`text-sm px-3 py-2 rounded-lg border ${
           status.type === "success"
@@ -1353,61 +1152,179 @@ function DataTab() {
         </div>
       )}
 
-      {/* Folders */}
-      <div className={sectionClass}>
-        <div className={headingClass}>📁 Folders</div>
-        <div className="flex gap-2">
-          <input
-            type="text"
-            value={newFolderName}
-            onChange={e => setNewFolderName(e.target.value)}
-            onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); handleAddFolder(); } }}
-            placeholder="New folder name…"
-            className="flex-1 bg-[var(--bg)] border border-[var(--border)] rounded-lg px-3 py-1.5
-                       text-sm text-[var(--text)] placeholder-[var(--muted)]
-                       focus:outline-none focus:border-[var(--accent)] transition-colors"
-          />
-          <button
-            onClick={handleAddFolder}
-            className="px-3 py-1.5 bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white text-sm
-                       rounded-lg transition-colors"
-          >
-            Create
-          </button>
-        </div>
-        {folders.length === 0 ? (
-          <div className="text-xs text-[var(--muted)]">No folders yet.</div>
-        ) : (
-          <div className="flex flex-col divide-y divide-[var(--border)] border border-[var(--border)] rounded-lg overflow-hidden">
-            {folders.map(f => (
-              <div key={f.id} className="flex items-center gap-2 px-3 py-2 bg-[var(--bg)]">
-                <span className="text-sm">{f.icon ?? "📁"}</span>
-                <span className="flex-1 text-sm text-[var(--text)] truncate">{f.name}</span>
-                <button
-                  onClick={() => handleDeleteFolder(f.id, f.name)}
-                  className="text-xs text-[var(--muted)] hover:text-[var(--danger)] transition-colors"
-                >
-                  Delete
-                </button>
-              </div>
-            ))}
+      {/* Import CSV */}
+      <div className={S}>
+        <div className={H}>📥 Import passwords</div>
+        <p className="text-xs text-[var(--muted)] leading-relaxed">
+          Accepts CSV exports from Chrome
+          {" "}(<span className="font-mono">chrome://password-manager → Settings → Export</span>)
+          {" "}and Firefox
+          {" "}(<span className="font-mono">about:logins → ··· → Export Logins…</span>).
+        </p>
+
+        <input ref={fileRef} type="file" accept=".csv,text/csv" onChange={handleFile} className="hidden" />
+        <button
+          onClick={() => fileRef.current?.click()}
+          className="w-full border-2 border-dashed border-[var(--border)] hover:border-[var(--accent)]
+                     rounded-xl py-6 text-sm text-[var(--muted)] hover:text-[var(--text)] transition-colors"
+        >
+          📂 Choose CSV file…
+        </button>
+
+        {parseError && <Alert type="error">{parseError}</Alert>}
+
+        {importedCount !== null && (
+          <Alert type="success">✓ Imported {importedCount} item{importedCount !== 1 ? "s" : ""}</Alert>
+        )}
+
+        {rows.length > 0 && (
+          <div className="flex flex-col gap-3">
+            <div className="text-xs text-[var(--muted)]">{rows.length} items ready to import:</div>
+            <div className="border border-[var(--border)] rounded-xl overflow-hidden max-h-48 overflow-y-auto">
+              <table className="w-full text-xs">
+                <thead className="sticky top-0 bg-[var(--surface)] border-b border-[var(--border)]">
+                  <tr>
+                    <th className="text-left px-3 py-2 text-[var(--muted)] font-medium">Title</th>
+                    <th className="text-left px-3 py-2 text-[var(--muted)] font-medium">URL</th>
+                    <th className="text-left px-3 py-2 text-[var(--muted)] font-medium">User</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((r, i) => (
+                    <tr key={i} className="border-b border-[var(--border)]/40 last:border-0">
+                      <td className="px-3 py-1.5 text-[var(--text)] truncate max-w-[120px]">{r.title}</td>
+                      <td className="px-3 py-1.5 text-[var(--muted)] truncate max-w-[120px]" title={r.url}>{r.url}</td>
+                      <td className="px-3 py-1.5 text-[var(--muted)] truncate max-w-[80px]">{r.username}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-medium text-[var(--muted)] uppercase tracking-wide">
+                Tag these imports (optional)
+              </label>
+              {profiles.length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                  {profiles.map(p => {
+                    const label = p.name || p.email || p.id.slice(0, 8);
+                    return (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => setSourceTag(t => t === label ? "" : label)}
+                        className={`px-2.5 py-1 rounded-full text-xs border transition-colors
+                          ${sourceTag === label
+                            ? "bg-[var(--accent)]/20 border-[var(--accent)] text-[var(--accent)]"
+                            : "border-[var(--border)] text-[var(--muted)] hover:text-[var(--text)]"
+                          }`}
+                      >
+                        {label}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+              <input
+                type="text"
+                value={sourceTag}
+                onChange={e => setSourceTag(e.target.value)}
+                placeholder="or type a custom label…"
+                className="w-full bg-[var(--bg)] border border-[var(--border)] rounded-lg px-3 py-2
+                           text-sm text-[var(--text)] placeholder-[var(--muted)]
+                           focus:outline-none focus:border-[var(--accent)] transition-colors"
+              />
+            </div>
+
+            <button
+              onClick={handleImport}
+              disabled={importing}
+              className="w-full bg-[var(--accent)] hover:bg-[var(--accent-hover)] disabled:opacity-40
+                         text-white font-medium py-2.5 rounded-xl transition-colors"
+            >
+              {importing ? "Importing…" : `Import ${rows.length} item${rows.length !== 1 ? "s" : ""}${sourceTag.trim() ? ` → "${sourceTag.trim()}"` : ""}`}
+            </button>
           </div>
         )}
+
+        {/* Bulk retag */}
+        <div className="border-t border-[var(--border)] pt-3 flex flex-col gap-2">
+          <div className="text-xs font-medium text-[var(--muted)] uppercase tracking-wide">Bulk re-tag</div>
+          {retag === null ? (
+            <button
+              type="button"
+              onClick={() => setRetag({ old: "", new: "" })}
+              className="text-xs text-[var(--accent)] hover:underline self-start"
+            >
+              + Rename or clear a tag…
+            </button>
+          ) : (
+            <div className="flex flex-col gap-2">
+              <input
+                type="text"
+                value={retag.old}
+                onChange={e => setRetag(r => r ? { ...r, old: e.target.value } : r)}
+                placeholder="Existing tag to rename"
+                className="w-full bg-[var(--bg)] border border-[var(--border)] rounded-lg px-3 py-2
+                           text-sm text-[var(--text)] placeholder-[var(--muted)]
+                           focus:outline-none focus:border-[var(--accent)] transition-colors"
+              />
+              <input
+                type="text"
+                value={retag.new}
+                onChange={e => setRetag(r => r ? { ...r, new: e.target.value } : r)}
+                placeholder="New tag (leave empty to clear)"
+                className="w-full bg-[var(--bg)] border border-[var(--border)] rounded-lg px-3 py-2
+                           text-sm text-[var(--text)] placeholder-[var(--muted)]
+                           focus:outline-none focus:border-[var(--accent)] transition-colors"
+              />
+              <div className="flex gap-2">
+                <button type="button" onClick={() => setRetag(null)}
+                  className="flex-1 border border-[var(--border)] text-[var(--muted)]
+                             hover:text-[var(--text)] py-2 rounded-xl text-sm transition-colors"
+                >Cancel</button>
+                <button type="button" onClick={handleRetag} disabled={!retag.old.trim()}
+                  className="flex-1 bg-[var(--accent)] hover:bg-[var(--accent-hover)] disabled:opacity-40
+                             text-white font-medium py-2 rounded-xl text-sm transition-colors"
+                >Apply</button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Export CSV */}
+      <div className={S}>
+        <div className={H}>📤 Export passwords</div>
+        <p className="text-xs text-[var(--muted)]">
+          Export all Login entries as a CSV file compatible with Chrome, Firefox, and Bitwarden.
+        </p>
+        <button
+          onClick={handleExportCsv}
+          disabled={exportLoading}
+          className="self-start px-4 py-2 border border-[var(--border)] text-sm text-[var(--text)]
+                     hover:border-[var(--accent)] hover:text-[var(--accent)] rounded-lg transition-colors
+                     disabled:opacity-50"
+        >
+          {exportLoading ? "Saving…" : "Export as CSV"}
+        </button>
       </div>
 
       {/* Trash */}
-      <div className={sectionClass}>
+      <div className={S}>
         <div className="flex items-center justify-between">
-          <div className={headingClass}>🗑 Trash ({trashItems.length})</div>
+          <div className={H}>🗑 Trash ({trashItems.length})</div>
           {trashItems.length > 0 && (
-            <button
-              onClick={handleEmptyTrash}
+            <button onClick={handleEmptyTrash}
               className="text-xs text-[var(--danger)] hover:text-red-400 transition-colors"
-            >
-              Empty trash
-            </button>
+            >Empty trash</button>
           )}
         </div>
+        <p className="text-xs text-[var(--muted)]">
+          Items in trash are automatically purged after 30 days.
+          Use the main vault list to bulk-select and move items here.
+        </p>
         {trashItems.length === 0 ? (
           <div className="text-xs text-[var(--muted)]">Trash is empty.</div>
         ) : (
@@ -1416,22 +1333,19 @@ function DataTab() {
               <div key={item.id} className="flex items-center gap-2 px-3 py-2 bg-[var(--bg)]">
                 <div className="flex-1 min-w-0">
                   <div className="text-sm text-[var(--text)] truncate">{item.title}</div>
+                  {item.subtitle && (
+                    <div className="text-[10px] text-[var(--muted)] truncate">{item.subtitle}</div>
+                  )}
                   <div className="text-[10px] text-[var(--muted)]">
                     {item.itemType} · deleted {new Date(item.updatedAt * 1000).toLocaleDateString()}
                   </div>
                 </div>
-                <button
-                  onClick={() => handleRestore(item.id)}
+                <button onClick={() => handleRestore(item.id)}
                   className="text-xs text-[var(--accent)] hover:text-[var(--accent-hover)] transition-colors flex-shrink-0"
-                >
-                  Restore
-                </button>
-                <button
-                  onClick={() => handlePurge(item.id, item.title)}
+                >Restore</button>
+                <button onClick={() => handlePurge(item.id, item.title)}
                   className="text-xs text-[var(--muted)] hover:text-[var(--danger)] transition-colors flex-shrink-0"
-                >
-                  Delete
-                </button>
+                >Delete</button>
               </div>
             ))}
           </div>
@@ -1439,10 +1353,10 @@ function DataTab() {
       </div>
 
       {/* Password health */}
-      <div className={sectionClass}>
-        <div className={headingClass}>🔍 Password Health</div>
+      <div className={S}>
+        <div className={H}>🔍 Password Health</div>
         <p className="text-xs text-[var(--muted)]">
-          Analyse your login passwords for weaknesses, duplicates, and entries not updated in 6+ months.
+          Analyse login passwords for weaknesses, duplicates, and entries not updated in 6+ months.
         </p>
         <button
           onClick={handleHealthReport}
@@ -1477,23 +1391,6 @@ function DataTab() {
             </div>
           )
         )}
-      </div>
-
-      {/* CSV Export */}
-      <div className={sectionClass}>
-        <div className={headingClass}>📤 Export passwords</div>
-        <p className="text-xs text-[var(--muted)]">
-          Export all Login entries as a CSV file compatible with Chrome, Firefox, and Bitwarden.
-        </p>
-        <button
-          onClick={handleExportCsv}
-          disabled={exportLoading}
-          className="self-start px-4 py-2 border border-[var(--border)] text-sm text-[var(--text)]
-                     hover:border-[var(--accent)] hover:text-[var(--accent)] rounded-lg transition-colors
-                     disabled:opacity-50"
-        >
-          {exportLoading ? "Saving…" : "Export as CSV"}
-        </button>
       </div>
     </div>
   );
