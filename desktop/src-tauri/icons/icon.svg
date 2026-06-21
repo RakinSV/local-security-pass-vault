@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <style>
+      .bg { fill: #0f1117; }
+      .hex-border { stroke: #6366f1; fill: none; stroke-width: 3; }
+      .shield { fill: #1a1d2e; stroke: #6366f1; stroke-width: 2; }
+      .lock-body { fill: #6366f1; }
+      .lock-shackle { fill: none; stroke: #818cf8; stroke-width: 16; stroke-linecap: round; }
+      .shackle-fill { fill: #1a1d2e; }
+      .keyhole { fill: #0f1117; }
+      .ring { fill: none; stroke-dasharray: 8 6; }
+      .dot { fill: #818cf8; }
+      .circuit { stroke: #6366f1; fill: none; opacity: 0.4; stroke-width: 1.5; }
+      .bit-on { fill: #818cf8; opacity: 0.6; }
+      .bit-off { fill: #0f1117; opacity: 0.6; }
+    </style>
+  </defs>
+
+  <!-- Background hex -->
+  <polygon class="bg" points="256,22 458,142 458,382 256,502 54,382 54,142"/>
+
+  <!-- Outer hex border -->
+  <polygon class="hex-border" points="256,22 458,142 458,382 256,502 54,142"/>
+  <polygon class="hex-border" style="opacity:0.15;stroke-width:14;" points="256,22 458,142 458,382 256,502 54,382 54,142"/>
+
+  <!-- Circuit lines from corners -->
+  <line class="circuit" x1="256" y1="22" x2="256" y2="88"/>
+  <line class="circuit" x1="256" y1="424" x2="256" y2="502"/>
+  <line class="circuit" x1="54" y1="142" x2="112" y2="174"/>
+  <line class="circuit" x1="458" y1="142" x2="400" y2="174"/>
+  <line class="circuit" x1="54" y1="382" x2="112" y2="350"/>
+  <line class="circuit" x1="458" y1="382" x2="400" y2="350"/>
+
+  <!-- Corner dots -->
+  <circle class="dot" cx="256" cy="22" r="5" opacity="0.8"/>
+  <circle class="dot" cx="256" cy="502" r="5" opacity="0.8"/>
+  <circle class="dot" cx="54" cy="142" r="5" opacity="0.8"/>
+  <circle class="dot" cx="458" cy="142" r="5" opacity="0.8"/>
+  <circle class="dot" cx="54" cy="382" r="5" opacity="0.8"/>
+  <circle class="dot" cx="458" cy="382" r="5" opacity="0.8"/>
+
+  <!-- Accent rings -->
+  <circle class="ring" cx="256" cy="248" r="125" stroke="#6366f1" stroke-width="2"/>
+  <circle class="ring" cx="256" cy="248" r="110" stroke="#4338ca" stroke-width="1" stroke-dasharray="4 8"/>
+
+  <!-- Inner shield / platform -->
+  <rect class="shield" x="166" y="182" width="180" height="152" rx="16"/>
+
+  <!-- Lock shackle arch -->
+  <path class="lock-shackle" d="M218,208 L218,173 Q218,145 256,145 Q294,145 294,173 L294,208"/>
+  <path class="shackle-fill" d="M226,204 L226,173 Q226,154 256,154 Q286,154 286,173 L286,204 Z"/>
+
+  <!-- Lock body -->
+  <rect class="lock-body" x="188" y="200" width="136" height="106" rx="12"/>
+
+  <!-- Keyhole -->
+  <circle class="keyhole" cx="256" cy="248" r="17"/>
+  <rect class="keyhole" x="250" y="250" width="12" height="28" rx="4"/>
+
+  <!-- Lock body corner dots -->
+  <circle class="dot" cx="206" cy="220" r="3" opacity="0.5"/>
+  <circle class="dot" cx="306" cy="220" r="3" opacity="0.5"/>
+  <circle class="dot" cx="206" cy="292" r="3" opacity="0.5"/>
+  <circle class="dot" cx="306" cy="292" r="3" opacity="0.5"/>
+
+  <!-- Divider line -->
+  <line stroke="#818cf8" stroke-width="1" opacity="0.3" x1="200" y1="276" x2="312" y2="276"/>
+
+  <!-- Binary-style dots row -->
+  <circle class="bit-on"  cx="216" cy="291" r="3"/>
+  <circle class="bit-off" cx="228" cy="291" r="3"/>
+  <circle class="bit-on"  cx="240" cy="291" r="3"/>
+  <circle class="bit-on"  cx="252" cy="291" r="3"/>
+  <circle class="bit-off" cx="264" cy="291" r="3"/>
+  <circle class="bit-on"  cx="276" cy="291" r="3"/>
+  <circle class="bit-off" cx="288" cy="291" r="3"/>
+  <circle class="bit-on"  cx="300" cy="291" r="3"/>
+</svg>

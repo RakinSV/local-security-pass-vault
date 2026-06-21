@@ -1447,8 +1447,8 @@ function DataTab() {
         <button
           onClick={handleHealthReport}
           disabled={healthLoading}
-          className="self-start px-4 py-2 bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white text-sm
-                     rounded-lg transition-colors disabled:opacity-50"
+          className="w-full px-4 py-2.5 bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white text-sm
+                     font-medium rounded-lg transition-colors disabled:opacity-50"
         >
           {healthLoading ? "Analysing…" : "Run health check"}
         </button>

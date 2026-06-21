@@ -52,8 +52,8 @@ pub fn parse_otpauth_uri(uri: &str) -> Result<(String, String, String), String> 
     }
 
     // label can be "Issuer:Account" — strip the issuer prefix if present
-    if account.contains(':') {
-        account = account.splitn(2, ':').nth(1).unwrap_or(&account).trim().to_string();
+    if let Some((_, after)) = account.split_once(':') {
+        account = after.trim().to_string();
     }
 
     if secret.is_empty() {
