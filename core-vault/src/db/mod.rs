@@ -57,11 +57,13 @@ pub struct Db {
 }
 
 impl Db {
-    /// Создаёт пустую БД в памяти и применяет схему v1.
+    /// Создаёт пустую БД в памяти и применяет текущую схему (v1 + все миграции).
     pub fn create_empty() -> Result<Db> {
         let conn = Connection::open_in_memory()?;
         conn.execute_batch(schema::SCHEMA_V1)?;
-        Ok(Db { conn })
+        let db = Db { conn };
+        db.run_migrations()?;
+        Ok(db)
     }
 
     /// Загружает БД из расшифрованных байт (формат sqlite3_serialize).

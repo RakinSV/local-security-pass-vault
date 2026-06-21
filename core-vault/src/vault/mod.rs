@@ -234,7 +234,7 @@ impl Vault {
                                 &enc, &nonce, &meta.vault_id, "totp_secret", &vault_key,
                             )?);
                             let secret_b32 = Zeroizing::new(
-                                std::str::from_utf8(&*secret_bytes)
+                                std::str::from_utf8(&secret_bytes)
                                     .map_err(|_| VaultError::TwoFactorFailed)?
                                     .to_owned(),
                             );
@@ -357,7 +357,7 @@ impl Vault {
                     &enc, &nonce, &self.meta.vault_id, "totp_secret", &self.vault_key,
                 )?);
                 let secret_b32 = Zeroizing::new(
-                    std::str::from_utf8(&*secret_bytes)
+                    std::str::from_utf8(&secret_bytes)
                         .map_err(|_| VaultError::TwoFactorFailed)?
                         .to_owned(),
                 );
