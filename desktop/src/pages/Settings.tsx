@@ -1792,7 +1792,7 @@ function AboutTab() {
           <h2 className="font-bold text-base text-[var(--text)] leading-tight">
             Local Security Pass Vault
           </h2>
-          <div className="text-xs text-[var(--muted)] mt-0.5">Version 0.2.3</div>
+          <div className="text-xs text-[var(--muted)] mt-0.5">Version 0.2.4</div>
         </div>
       </div>
 

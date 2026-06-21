@@ -811,7 +811,7 @@ dependencies = [
 
 [[package]]
 name = "core-vault"
-version = "0.2.3"
+version = "0.2.4"
 dependencies = [
  "bip39",
  "blake3",
@@ -5314,7 +5314,7 @@ dependencies = [
 
 [[package]]
 name = "vaultpass-desktop"
-version = "0.2.3"
+version = "0.2.4"
 dependencies = [
  "arboard",
  "core-vault",

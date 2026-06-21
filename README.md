@@ -394,7 +394,13 @@ local-security-pass-vault/
 - ✅ **Password health report** — weak / duplicate / old password detection
 - ✅ **CSV export** — Chrome/Firefox-compatible format
 
-### ✅ v0.2.3-beta — UX & Import Improvements + Vault 2FA (latest)
+### ✅ v0.2.4 — OS-Level Security Hardening (latest)
+- ✅ **Windows process mitigations** — `SetDllDirectoryW("")` strips CWD from DLL search path; `ProcessDynamicCodePolicy` prohibits shellcode injection; `ProcessSignaturePolicy` requires Microsoft-signed DLLs only
+- ✅ **Linux seccomp-BPF blacklist** — blocks `ptrace`, `process_vm_readv`, `process_vm_writev` with `KillThread`; default-Allow for all other syscalls (GTK/WebKit safe); x86\_64 + aarch64
+- ✅ **Screen capture protection** — Windows `WDA_EXCLUDEFROMCAPTURE` applied when a password is revealed in plaintext; `WDA_NONE` when hidden; works via `SetWindowDisplayAffinity`
+- ✅ **HaveIBeenPwned breach check** — k-anonymity: SHA-1 computed locally, only first 5 hex chars sent to HIBP API; password never leaves device; "Check breaches" button on every Login detail view
+
+### ✅ v0.2.3-beta — UX & Import Improvements + Vault 2FA
 - ✅ **Vault 2FA unlock** — protect vault access with TOTP (Settings → Security); QR code shown during setup; secret encrypted with vault key; safe degradation if meta/DB desync; ±30 s clock-skew tolerance
 - ✅ **2FA setup QR code** — scan with any authenticator app (Aegis, Google Authenticator, Authy) instead of manual key entry; SVG generated offline, never leaves the app
 - ✅ **Zeroize TOTP secrets** — decrypted TOTP bytes zeroed from memory immediately after verification (via `zeroize` crate)
@@ -413,7 +419,7 @@ local-security-pass-vault/
 ### 🔜 v0.5 — Hardware Vault
 - [ ] **ESP32 hardware key** — vault unlock requires the physical device via USB/BLE
 - [ ] **M5StickC Plus2** — standalone portable vault with button-press unlock and BLE output
-- [ ] **Breached password check** — local offline check against HaveIBeenPwned SHA-1 hash list
+- [ ] **Offline breach database** — bundle HaveIBeenPwned SHA-1 hash list for air-gapped checking (k-anonymity API already implemented in v0.2.4)
 
 ---
 
