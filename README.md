@@ -73,7 +73,8 @@ LSPV takes the opposite approach. The vault never leaves your disk. There is no 
 
 ### Security & Password Management
 - **Password generator** — configurable length (8–64), uppercase/lowercase/digits/symbols toggles, strength meter with entropy bits
-- **TOTP / 2FA** — store TOTP secrets, get live 6-digit codes with countdown ring; scan QR from clipboard
+- **Vault 2FA unlock protection** — enable TOTP (Settings → Security); every vault open requires a 6-digit authenticator code after the master password; secret encrypted with vault key, included in `.vbk` backup
+- **TOTP / 2FA for entries** — store TOTP secrets per-login, get live 6-digit codes with countdown ring; scan QR from clipboard
 - **Custom fields** — add hidden or visible custom fields to any Login entry (API keys, PINs, recovery codes)
 - **Password history** — auto-saved when you change a password; view past passwords with timestamps
 - **Password health report** — one-click scan: detects weak (<12 chars or <2 char classes), duplicate, and old (>6 months) passwords
@@ -258,6 +259,7 @@ chmod +x lspv-x86_64.AppImage
 | **RAM dump while locked** | `zeroize` + `mlock` — keys zero-wiped on every lock() |
 | **RAM dump while unlocked** | `mlock` prevents swap; AEAD per-record limits blast radius |
 | **Brute force master password** | Argon2id 256 MB ≈ 2-4s/attempt even on RTX 4090 |
+| **Stolen password + vault file** | Vault 2FA (TOTP) adds second factor; requires physical authenticator device |
 | **DLL/SO hijacking** | libsodium statically linked — no external DLL surface |
 | **GPU VRAM residue (LeftoverLocals)** | `sodium_mlock` + `PR_SET_DUMPABLE=0` documented mitigation |
 | **Supply chain (XZ-utils style)** | `cargo audit` in CI · minimal deps |
@@ -392,7 +394,10 @@ local-security-pass-vault/
 - ✅ **Password health report** — weak / duplicate / old password detection
 - ✅ **CSV export** — Chrome/Firefox-compatible format
 
-### ✅ v0.2.3-beta — UX & Import Improvements (latest)
+### ✅ v0.2.3-beta — UX & Import Improvements + Vault 2FA (latest)
+- ✅ **Vault 2FA unlock** — protect vault access with TOTP (Settings → Security); QR code shown during setup; secret encrypted with vault key; safe degradation if meta/DB desync; ±30 s clock-skew tolerance
+- ✅ **2FA setup QR code** — scan with any authenticator app (Aegis, Google Authenticator, Authy) instead of manual key entry; SVG generated offline, never leaves the app
+- ✅ **Zeroize TOTP secrets** — decrypted TOTP bytes zeroed from memory immediately after verification (via `zeroize` crate)
 - ✅ **Folder rename** — inline edit with keyboard confirm (Enter/Esc)
 - ✅ **Drag-and-drop** — move vault items into folders via native HTML5 drag-and-drop
 - ✅ **Bitwarden JSON import** — native import: logins, secure notes, cards, identities (Settings → Data)

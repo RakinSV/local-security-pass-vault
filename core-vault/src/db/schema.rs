@@ -51,3 +51,9 @@ pub const MIGRATE_V1_TO_V2: &str = r#"
 ALTER TABLE items ADD COLUMN source_tag TEXT;
 CREATE INDEX IF NOT EXISTS idx_items_source ON items(source_tag) WHERE deleted = 0 AND source_tag IS NOT NULL;
 "#;
+
+/// Миграция V2→V3: добавить колонки TOTP 2FA в таблицу vault.
+pub const MIGRATE_V2_TO_V3: &str = r#"
+ALTER TABLE vault ADD COLUMN totp_secret_encrypted BLOB;
+ALTER TABLE vault ADD COLUMN totp_secret_nonce BLOB;
+"#;

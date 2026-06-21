@@ -82,12 +82,12 @@ fn full_vault_lifecycle_1000_items() {
 
     // 3. Старый пароль больше не открывает.
     assert!(matches!(
-        Vault::open(&dir, b"correct-horse-battery-staple"),
+        Vault::open(&dir, b"correct-horse-battery-staple", None),
         Err(VaultError::DecryptionFailed)
     ));
 
     // 4. Открыть новым паролем и проверить все 1000 записей.
-    let v = Vault::open(&dir, b"new-secure-passphrase").unwrap();
+    let v = Vault::open(&dir, b"new-secure-passphrase", None).unwrap();
     let items = v.list_items().unwrap();
     assert_eq!(items.len(), N, "потеряны записи после смены пароля");
 
@@ -111,7 +111,7 @@ fn reopened_vault_search_works() {
         }
         v.save().unwrap();
     }
-    let v = Vault::open(&dir, b"pw").unwrap();
+    let v = Vault::open(&dir, b"pw", None).unwrap();
     let found = v.search("site 42").unwrap();
     assert_eq!(found.len(), 1);
     assert_eq!(found[0].title, "Site 42");

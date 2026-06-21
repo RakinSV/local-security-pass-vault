@@ -35,7 +35,12 @@ import {
   getHealthReport,
   pickCsvSavePath,
   exportItemsCsv,
+  vaultHas2fa,
+  setupVault2fa,
+  confirmVault2fa,
+  disableVault2fa,
 } from "../api/vault";
+import type { VaultTwoFaSetup } from "../api/vault";
 import type { AutoBackupEntry, HealthEntry, KeychainVaultStatus } from "../api/vault";
 import type { BrowserConfig, ImportRow, ItemSummary, ProfileInfo } from "../types/vault";
 import { getThemeMode, getAccentColor, saveTheme, type ThemeMode } from "../theme";
@@ -245,6 +250,229 @@ const LOCK_TIMEOUT_OPTIONS: { label: string; secs: number }[] = [
   { label: "1 hour",  secs: 3600 },
 ];
 
+// ── Two-Factor Authentication section (shown when vault is open) ──────────────
+
+type TwoFaStep = "idle" | "setup" | "disable";
+
+function TwoFaSection({ vaultOpen }: { vaultOpen: boolean }) {
+  const [has2fa,   setHas2fa]   = useState<boolean | null>(null);
+  const [step,     setStep]     = useState<TwoFaStep>("idle");
+  const [setup,    setSetup]    = useState<VaultTwoFaSetup | null>(null);
+  const [code,     setCode]     = useState("");
+  const [error,    setError]    = useState("");
+  const [success,  setSuccess]  = useState("");
+  const [loading,  setLoading]  = useState(false);
+
+  useEffect(() => {
+    if (!vaultOpen) return;
+    vaultHas2fa().then(setHas2fa).catch(() => setHas2fa(false));
+  }, [vaultOpen]);
+
+  if (!vaultOpen || has2fa === null) return null;
+
+  async function startSetup() {
+    setError(""); setSuccess(""); setLoading(true);
+    try {
+      const s = await setupVault2fa();
+      setSetup(s);
+      setStep("setup");
+    } catch (err) { setError(String(err)); }
+    finally { setLoading(false); }
+  }
+
+  async function confirmEnable() {
+    if (!setup) return;
+    setError(""); setLoading(true);
+    try {
+      await confirmVault2fa(setup.secret, code);
+      setHas2fa(true);
+      setStep("idle");
+      setSetup(null);
+      setCode("");
+      setSuccess("Two-factor authentication enabled.");
+    } catch (err) {
+      const msg = String(err).toLowerCase();
+      setError(msg.includes("two-factor") ? "Invalid code — please check your authenticator app." : String(err));
+    } finally { setLoading(false); }
+  }
+
+  async function confirmDisable() {
+    setError(""); setLoading(true);
+    try {
+      await disableVault2fa(code);
+      setHas2fa(false);
+      setStep("idle");
+      setCode("");
+      setSuccess("Two-factor authentication disabled.");
+    } catch (err) {
+      const msg = String(err).toLowerCase();
+      setError(msg.includes("two-factor") ? "Invalid code — please check your authenticator app." : String(err));
+    } finally { setLoading(false); }
+  }
+
+  return (
+    <div>
+      <h3 className="font-semibold mb-3">Two-Factor Authentication</h3>
+      <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4 flex flex-col gap-4">
+
+        {/* Status row */}
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <div className="font-medium text-sm">
+              {has2fa ? "2FA is enabled" : "2FA is disabled"}
+            </div>
+            <div className="text-[var(--muted)] text-xs mt-0.5">
+              {has2fa
+                ? "A TOTP code from your authenticator app is required to unlock this vault."
+                : "Add an extra layer of protection with an authenticator app (TOTP)."}
+            </div>
+          </div>
+          {step === "idle" && (
+            <button
+              onClick={has2fa ? () => { setStep("disable"); setError(""); setCode(""); } : startSetup}
+              disabled={loading}
+              className={`text-sm px-3 py-2 rounded-lg border flex-shrink-0 transition-colors disabled:opacity-40 ${
+                has2fa
+                  ? "border-[var(--danger)] text-[var(--danger)] hover:bg-red-950/20"
+                  : "border-[var(--accent)] text-[var(--accent)] hover:bg-[var(--accent)]/10"
+              }`}
+            >
+              {loading ? "…" : has2fa ? "Disable" : "Enable"}
+            </button>
+          )}
+        </div>
+
+        {/* Setup: show QR + secret */}
+        {step === "setup" && setup && (
+          <div className="flex flex-col gap-3 border-t border-[var(--border)] pt-4">
+            <p className="text-sm text-[var(--muted)]">
+              Scan the QR code with your authenticator app (Google Authenticator, Aegis, Authy, etc.),
+              then enter the 6-digit code to confirm.
+            </p>
+
+            {/* QR code */}
+            {setup.qrSvg && (
+              <div className="flex flex-col items-center gap-1.5">
+                <div className="p-2 bg-white rounded-xl inline-block shadow-sm">
+                  <img
+                    src={`data:image/svg+xml,${encodeURIComponent(setup.qrSvg)}`}
+                    alt="Scan this QR code with your authenticator app"
+                    className="w-44 h-44 block"
+                    draggable={false}
+                  />
+                </div>
+                <span className="text-xs text-[var(--muted)]">Scan with your authenticator app</span>
+              </div>
+            )}
+
+            {/* Secret key for manual entry */}
+            <div>
+              <div className="text-xs text-[var(--muted)] mb-1">Or enter the key manually</div>
+              <div className="flex items-center gap-2">
+                <code className="flex-1 bg-[var(--bg)] border border-[var(--border)] rounded-lg px-3 py-2
+                                 text-xs font-mono break-all select-all">
+                  {setup.secret}
+                </code>
+                <button
+                  onClick={() => navigator.clipboard.writeText(setup.secret)}
+                  className="text-xs px-2 py-2 rounded-lg border border-[var(--border)]
+                             hover:bg-[var(--accent)]/10 transition-colors flex-shrink-0"
+                  title="Copy secret key"
+                >
+                  Copy
+                </button>
+              </div>
+            </div>
+
+            {/* Warning */}
+            <div className="rounded-lg border border-amber-800/40 bg-amber-950/25 px-3 py-2.5 text-xs text-amber-300 leading-relaxed">
+              <span className="font-semibold">Save this key now.</span>{" "}
+              If you lose access to your authenticator app and don't have a copy of this key,
+              you will be permanently locked out of your vault.
+              Your TOTP secret is included in <code className="font-mono">.vbk</code> backup files — keep your backups safe.
+            </div>
+
+            <div>
+              <label className="text-xs text-[var(--muted)] mb-1 block">
+                Enter the 6-digit code from your authenticator app
+              </label>
+              <input
+                type="text"
+                inputMode="numeric"
+                maxLength={6}
+                value={code}
+                onChange={e => setCode(e.target.value.replace(/\D/g, ""))}
+                placeholder="000000"
+                className="w-full px-3 py-2 rounded-lg border border-[var(--border)]
+                           bg-[var(--input-bg)] text-[var(--text)] text-center text-xl
+                           tracking-[0.4em] focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
+                autoComplete="one-time-code"
+              />
+            </div>
+            {error && <Alert type="error">{error}</Alert>}
+            <div className="flex gap-2">
+              <button
+                onClick={() => { setStep("idle"); setSetup(null); setCode(""); setError(""); }}
+                className="flex-1 py-2 rounded-lg border border-[var(--border)] text-sm hover:bg-[var(--accent)]/5 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmEnable}
+                disabled={loading || code.length < 6}
+                className="flex-1 py-2 rounded-lg bg-[var(--accent)] text-white text-sm
+                           disabled:opacity-40 hover:bg-[var(--accent-hover)] transition-colors"
+              >
+                {loading ? "Verifying…" : "Confirm Enable"}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Disable: verify current code */}
+        {step === "disable" && (
+          <div className="flex flex-col gap-3 border-t border-[var(--border)] pt-4">
+            <p className="text-sm text-[var(--muted)]">
+              Enter the current 6-digit code from your authenticator app to disable 2FA.
+            </p>
+            <input
+              type="text"
+              inputMode="numeric"
+              maxLength={6}
+              value={code}
+              onChange={e => setCode(e.target.value.replace(/\D/g, ""))}
+              placeholder="000000"
+              className="w-full px-3 py-2 rounded-lg border border-[var(--border)]
+                         bg-[var(--input-bg)] text-[var(--text)] text-center text-xl
+                         tracking-[0.4em] focus:outline-none focus:ring-2 focus:ring-[var(--danger)]"
+              autoComplete="one-time-code"
+            />
+            {error && <Alert type="error">{error}</Alert>}
+            <div className="flex gap-2">
+              <button
+                onClick={() => { setStep("idle"); setCode(""); setError(""); }}
+                className="flex-1 py-2 rounded-lg border border-[var(--border)] text-sm hover:bg-[var(--accent)]/5 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmDisable}
+                disabled={loading || code.length < 6}
+                className="flex-1 py-2 rounded-lg bg-[var(--danger)] text-white text-sm
+                           disabled:opacity-40 transition-colors"
+              >
+                {loading ? "Disabling…" : "Disable 2FA"}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {success && step === "idle" && <Alert type="success">{success}</Alert>}
+      </div>
+    </div>
+  );
+}
+
 function SecurityTab() {
   const [oldPw,     setOldPw]     = useState("");
   const [newPw,     setNewPw]     = useState("");
@@ -391,6 +619,9 @@ function SecurityTab() {
           </div>
         </div>
       )}
+
+      {/* ── Two-Factor Authentication ── */}
+      <TwoFaSection vaultOpen={kcStatus?.vaultOpen ?? false} />
 
       {/* ── Change master password ── */}
       <div>
@@ -1561,7 +1792,7 @@ function AboutTab() {
           <h2 className="font-bold text-base text-[var(--text)] leading-tight">
             Local Security Pass Vault
           </h2>
-          <div className="text-xs text-[var(--muted)] mt-0.5">Version 0.1.10</div>
+          <div className="text-xs text-[var(--muted)] mt-0.5">Version 0.2.3</div>
         </div>
       </div>
 

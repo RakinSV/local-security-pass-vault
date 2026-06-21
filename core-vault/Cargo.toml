@@ -28,6 +28,8 @@ bip39   = "2"
 blake3  = "1"
 # TOTP 2FA: RFC 6238 code generation from Base32 secret.
 totp-rs = "5"
+# Гарантированное обнуление секретов в памяти (volatile write, не оптимизируется).
+zeroize = "1"
 
 [features]
 # Раскрывает внутренние точки входа для cargo-fuzz (см. fuzz/). Не для прода.

@@ -131,9 +131,10 @@ pub async fn open_vault(
     state: State<'_, AppState>,
     dir_path: String,
     password: String,
+    totp_code: Option<String>,
 ) -> Result<(), AppError> {
     let dir = PathBuf::from(&dir_path);
-    let vault = core_vault::Vault::open(&dir, password.as_bytes())?;
+    let vault = core_vault::Vault::open(&dir, password.as_bytes(), totp_code.as_deref())?;
 
     // После успешного unlock — сохраняем Vault Key в OS Keychain для quick-unlock.
     // Non-fatal: если Keychain недоступен (headless, CI), игнорируем.
@@ -1233,6 +1234,107 @@ pub struct HealthEntryDto {
     pub is_duplicate: bool,
     pub is_old: bool,
     pub updated_at: i64,
+}
+
+// ── Vault 2FA ─────────────────────────────────────────────────────────────────
+
+/// Checks if the vault at `dir_path` requires a TOTP code to unlock.
+/// Reads vault.meta without decrypting the vault — safe to call before open.
+#[tauri::command]
+pub async fn vault_requires_2fa(dir_path: String) -> Result<bool, AppError> {
+    let meta_path = std::path::Path::new(&dir_path).join("vault.meta");
+    // Refuse symlinks — same policy as vault open.
+    let lstat = meta_path.symlink_metadata().map_err(|_| AppError::NotFound)?;
+    if lstat.file_type().is_symlink() {
+        return Err(AppError::Other("symlink detected on vault.meta".into()));
+    }
+    let bytes = std::fs::read(&meta_path).map_err(|_| AppError::NotFound)?;
+    let meta: serde_json::Value =
+        serde_json::from_slice(&bytes).map_err(|e| AppError::Serialization(e.to_string()))?;
+    Ok(meta
+        .get("totp_enabled")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false))
+}
+
+/// Returns true if the currently open vault has 2FA enabled.
+#[tauri::command]
+pub async fn vault_has_2fa(state: State<'_, AppState>) -> Result<bool, AppError> {
+    let guard = state.vault.lock().map_err(|_| AppError::LockPoisoned)?;
+    let vault = guard.as_ref().ok_or(AppError::VaultLocked)?;
+    Ok(vault.has_2fa())
+}
+
+#[derive(Debug, serde::Serialize)]
+pub struct VaultTwoFaSetup {
+    pub secret: String,
+    pub uri: String,
+    pub qr_svg: String,
+}
+
+fn uri_to_qr_svg(uri: &str) -> String {
+    use qrcode::{Color, QrCode};
+    let Ok(code) = QrCode::new(uri.as_bytes()) else {
+        return String::new();
+    };
+    let w = code.width();
+    let cell = 8usize;
+    let margin = 4usize;
+    let size = (w + 2 * margin) * cell;
+    let mut s = format!(
+        r#"<svg xmlns="http://www.w3.org/2000/svg" width="{size}" height="{size}"><rect width="{size}" height="{size}" fill="white"/>"#
+    );
+    for row in 0..w {
+        for col in 0..w {
+            if code[(row, col)] == Color::Dark {
+                let x = (col + margin) * cell;
+                let y = (row + margin) * cell;
+                s.push_str(&format!(
+                    r#"<rect x="{x}" y="{y}" width="{cell}" height="{cell}" fill="black"/>"#
+                ));
+            }
+        }
+    }
+    s.push_str("</svg>");
+    s
+}
+
+/// Generates a fresh TOTP secret for 2FA setup. Returns `{secret, uri, qr_svg}`.
+/// Does NOT enable 2FA yet — call `confirm_vault_2fa` after the user scans and verifies.
+#[tauri::command]
+pub async fn setup_vault_2fa(
+    state: State<'_, AppState>,
+) -> Result<VaultTwoFaSetup, AppError> {
+    let guard = state.vault.lock().map_err(|_| AppError::LockPoisoned)?;
+    let vault = guard.as_ref().ok_or(AppError::VaultLocked)?;
+    let (secret, uri) = vault.generate_2fa_secret()?;
+    let qr_svg = uri_to_qr_svg(&uri);
+    Ok(VaultTwoFaSetup { secret, uri, qr_svg })
+}
+
+/// Enables vault 2FA by verifying `code` against `secret`, then storing the encrypted secret.
+#[tauri::command]
+pub async fn confirm_vault_2fa(
+    state: State<'_, AppState>,
+    secret: String,
+    code: String,
+) -> Result<(), AppError> {
+    let mut guard = state.vault.lock().map_err(|_| AppError::LockPoisoned)?;
+    let vault = guard.as_mut().ok_or(AppError::VaultLocked)?;
+    vault.enable_2fa(&secret, &code)?;
+    Ok(())
+}
+
+/// Disables vault 2FA. Requires the current TOTP code as verification.
+#[tauri::command]
+pub async fn disable_vault_2fa(
+    state: State<'_, AppState>,
+    code: String,
+) -> Result<(), AppError> {
+    let mut guard = state.vault.lock().map_err(|_| AppError::LockPoisoned)?;
+    let vault = guard.as_mut().ok_or(AppError::VaultLocked)?;
+    vault.disable_2fa(&code)?;
+    Ok(())
 }
 
 /// Analyses all Login items and returns health issues.

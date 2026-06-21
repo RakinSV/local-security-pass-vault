@@ -45,6 +45,10 @@ pub struct VaultRow {
     pub key_nonce: Vec<u8>,
     pub created_at: i64,
     pub hint: Option<String>,
+    /// Зашифрованный Base32-секрет TOTP (vault_key + encrypt_field). None = 2FA выключена.
+    pub totp_secret_encrypted: Option<Vec<u8>>,
+    /// Nonce для totp_secret_encrypted (24 байта).
+    pub totp_secret_nonce: Option<Vec<u8>>,
 }
 
 /// In-memory соединение с БД vault.
@@ -89,6 +93,14 @@ impl Db {
         if has_source_tag == 0 {
             self.conn.execute_batch(schema::MIGRATE_V1_TO_V2)?;
         }
+        let has_totp: i64 = self.conn.query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('vault') WHERE name = 'totp_secret_encrypted'",
+            [],
+            |r| r.get(0),
+        ).unwrap_or(0);
+        if has_totp == 0 {
+            self.conn.execute_batch(schema::MIGRATE_V2_TO_V3)?;
+        }
         Ok(())
     }
 
@@ -99,8 +111,9 @@ impl Db {
         self.conn.execute("DELETE FROM vault", [])?;
         self.conn.execute(
             "INSERT INTO vault
-                (id, schema_version, encrypted_vault_key, key_nonce, created_at, hint)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                (id, schema_version, encrypted_vault_key, key_nonce, created_at, hint,
+                 totp_secret_encrypted, totp_secret_nonce)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
             params![
                 row.id.to_string(),
                 row.schema_version,
@@ -108,6 +121,8 @@ impl Db {
                 row.key_nonce,
                 row.created_at,
                 row.hint,
+                row.totp_secret_encrypted,
+                row.totp_secret_nonce,
             ],
         )?;
         Ok(())
@@ -116,7 +131,8 @@ impl Db {
     pub fn read_vault_row(&self) -> Result<VaultRow> {
         self.conn
             .query_row(
-                "SELECT id, schema_version, encrypted_vault_key, key_nonce, created_at, hint
+                "SELECT id, schema_version, encrypted_vault_key, key_nonce, created_at, hint,
+                        totp_secret_encrypted, totp_secret_nonce
                  FROM vault LIMIT 1",
                 [],
                 |r| {
@@ -127,6 +143,8 @@ impl Db {
                         key_nonce: r.get(3)?,
                         created_at: r.get(4)?,
                         hint: r.get(5)?,
+                        totp_secret_encrypted: r.get(6)?,
+                        totp_secret_nonce: r.get(7)?,
                     })
                 },
             )

@@ -25,6 +25,8 @@ core-vault           = { path = "../../core-vault" }
 keyring              = "2"
 rfd                  = { version = "0.14", default-features = false, features = ["tokio"] }
 webbrowser           = "1"
+# QR code generation (SVG) for 2FA setup screen
+qrcode               = "0.13"
 # TOTP QR decoding from clipboard image
 arboard              = { version = "3", default-features = false, features = ["image-data"] }
 rqrr                 = "0.9"

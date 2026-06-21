@@ -29,6 +29,12 @@ pub enum VaultError {
     /// Версия схемы не поддерживается.
     UnsupportedSchemaVersion { found: u32, max: u32 },
 
+    /// Vault имеет 2FA, но код не предоставлен.
+    TwoFactorRequired,
+
+    /// Предоставленный TOTP-код неверен.
+    TwoFactorFailed,
+
     /// libsodium не инициализирована или вернула ошибку.
     Crypto(&'static str),
 
@@ -62,6 +68,8 @@ impl std::fmt::Display for VaultError {
             }
             // Не раскрываем внутреннюю строку наружу в Display для крипто-ошибок —
             // деталь доступна только в Debug для разработчика.
+            VaultError::TwoFactorRequired => write!(f, "two-factor required"),
+            VaultError::TwoFactorFailed => write!(f, "two-factor code incorrect"),
             VaultError::Crypto(_) => write!(f, "crypto operation failed"),
             VaultError::Serialization(_) => write!(f, "serialization error"),
             VaultError::Database(_) => write!(f, "database error"),

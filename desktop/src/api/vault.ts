@@ -16,8 +16,8 @@ export const openGithub = () =>
 export const createVault = (dirPath: string, password: string, hint?: string) =>
   invoke<void>("create_vault", { dirPath, password, hint: hint ?? null });
 
-export const openVault = (dirPath: string, password: string) =>
-  invoke<void>("open_vault", { dirPath, password });
+export const openVault = (dirPath: string, password: string, totpCode?: string) =>
+  invoke<void>("open_vault", { dirPath, password, totpCode: totpCode ?? null });
 
 export const lockVault = () =>
   invoke<void>("lock_vault");
@@ -255,6 +255,29 @@ export interface HealthEntry {
 
 export const getHealthReport = () =>
   invoke<HealthEntry[]>("get_health_report");
+
+// ── Vault 2FA ─────────────────────────────────────────────────────────────────
+
+export const vaultRequires2fa = (dirPath: string) =>
+  invoke<boolean>("vault_requires_2fa", { dirPath });
+
+export const vaultHas2fa = () =>
+  invoke<boolean>("vault_has_2fa");
+
+export interface VaultTwoFaSetup {
+  secret: string;
+  uri: string;
+  qrSvg: string;
+}
+
+export const setupVault2fa = () =>
+  invoke<VaultTwoFaSetup>("setup_vault_2fa");
+
+export const confirmVault2fa = (secret: string, code: string) =>
+  invoke<void>("confirm_vault_2fa", { secret, code });
+
+export const disableVault2fa = (code: string) =>
+  invoke<void>("disable_vault_2fa", { code });
 
 // ── CSV Export ─────────────────────────────────────────────────────────────────
 
