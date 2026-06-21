@@ -384,6 +384,26 @@ impl Vault {
         Ok(out)
     }
 
+    /// Переименовывает папку; сохраняет parent_id, icon, created_at.
+    pub fn rename_folder(&mut self, id: &Uuid, new_name: &str) -> Result<()> {
+        let rows = self.db.list_folders()?;
+        let row = rows
+            .into_iter()
+            .find(|r| r.id == *id)
+            .ok_or_else(|| VaultError::Serialization("folder not found".into()))?;
+        let (name_encrypted, nonce) =
+            crypto::encrypt_field(new_name.as_bytes(), id, "name", &self.vault_key)?;
+        self.db.upsert_folder(&FolderRow {
+            id: row.id,
+            name_encrypted,
+            name_nonce: nonce.to_vec(),
+            parent_id: row.parent_id,
+            icon: row.icon,
+            created_at: row.created_at,
+        })?;
+        self.save()
+    }
+
     /// Удаляет папку; записи внутри получают folder_id = NULL.
     pub fn delete_folder(&mut self, id: &Uuid) -> Result<()> {
         self.db.delete_folder(id)?;

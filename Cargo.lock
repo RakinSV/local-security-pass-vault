@@ -811,7 +811,7 @@ dependencies = [
 
 [[package]]
 name = "core-vault"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "bip39",
  "blake3",

@@ -86,10 +86,15 @@ LSPV takes the opposite approach. The vault never leaves your disk. There is no 
 - **Restore** — paste mnemonic + pick .vbk file + choose destination folder
 
 ### Data Management
-- **CSV import** — from Chrome, Firefox, Bitwarden, and 1Password exports
+- **Bitwarden JSON import** — native import from Bitwarden unencrypted exports (logins, secure notes, cards, identities)
+- **CSV import** — from Chrome and Firefox password manager exports
 - **CSV export** — Chrome/Firefox-compatible format (name, url, username, password, note)
 - **Trash bin** — soft-deleted items go to trash; restore or permanently purge individually or all at once
-- **Folder management** — create/delete folders from Settings → Data tab
+- **Folder management** — create, rename, and delete folders; drag-and-drop items between folders
+
+### Appearance
+- **Themes** — Dark, Light, and System modes; switch live in Settings → General
+- **Accent colors** — 8 preset accent colors + custom color picker; applied instantly across the entire UI
 
 ### Browser Extension
 - **Auto-fill** — eTLD+1 domain matching, fills via native setter (not tracked by browser history)
@@ -139,7 +144,7 @@ LSPV takes the opposite approach. The vault never leaves your disk. There is no 
 
 ### Windows
 
-1. Download `Local Security Pass Vault_0.1.10_x64-setup.exe` from [Releases](https://github.com/RakinSV/local-security-pass-vault/releases)
+1. Download `Local Security Pass Vault_0.2.3_x64-setup.exe` from [Releases](https://github.com/RakinSV/local-security-pass-vault/releases)
 2. Run the installer — no admin rights required (per-user NSIS install)
 3. Launch **Local Security Pass Vault** from the Start menu
 4. Click **+ New Vault** and set a strong master password
@@ -386,6 +391,14 @@ local-security-pass-vault/
 - ✅ **Folders** — create/delete folders; sidebar filter
 - ✅ **Password health report** — weak / duplicate / old password detection
 - ✅ **CSV export** — Chrome/Firefox-compatible format
+
+### ✅ v0.2.3-beta — UX & Import Improvements (latest)
+- ✅ **Folder rename** — inline edit with keyboard confirm (Enter/Esc)
+- ✅ **Drag-and-drop** — move vault items into folders via native HTML5 drag-and-drop
+- ✅ **Bitwarden JSON import** — native import: logins, secure notes, cards, identities (Settings → Data)
+- ✅ **Themes** — Dark / Light / System mode with live switching (Settings → General)
+- ✅ **Accent colors** — 8 preset colors + custom color picker; persisted across sessions
+- ✅ **Linux CI** — AppImage build via GitHub Actions for every version tag
 
 ### 🔜 v0.4 — Mobile
 - [ ] **Android app** — Tauri 2 Mobile, same Rust crypto core, same React UI

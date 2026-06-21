@@ -219,6 +219,8 @@ pub fn run() {
             commands::list_folders,
             commands::add_folder,
             commands::delete_folder,
+            commands::rename_folder,
+            commands::import_bitwarden_json,
             commands::get_health_report,
             commands::pick_csv_save_path,
             commands::export_items_csv,

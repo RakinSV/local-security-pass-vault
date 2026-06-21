@@ -8,6 +8,7 @@ import {
   getNativeHostPath,
   parseImportCsv,
   importItemsFromCsv,
+  importBitwardenJson,
   getProfiles,
   setProfileName,
   openGithub,
@@ -37,6 +38,7 @@ import {
 } from "../api/vault";
 import type { AutoBackupEntry, HealthEntry, KeychainVaultStatus } from "../api/vault";
 import type { BrowserConfig, ImportRow, ItemSummary, ProfileInfo } from "../types/vault";
+import { getThemeMode, getAccentColor, saveTheme, type ThemeMode } from "../theme";
 
 interface Props {
   onBack: () => void;
@@ -100,10 +102,24 @@ export function Settings({ onBack, onImported }: Props) {
 
 // ── General Tab ───────────────────────────────────────────────────────────────
 
+const ACCENT_PRESETS = [
+  { label: "Indigo",  color: "#6366f1" },
+  { label: "Blue",    color: "#3b82f6" },
+  { label: "Violet",  color: "#8b5cf6" },
+  { label: "Rose",    color: "#f43f5e" },
+  { label: "Emerald", color: "#10b981" },
+  { label: "Amber",   color: "#f59e0b" },
+  { label: "Cyan",    color: "#06b6d4" },
+  { label: "Fuchsia", color: "#d946ef" },
+];
+
 function GeneralTab() {
   const [autostart, setAutostart] = useState(false);
   const [loading, setLoading]     = useState(true);
   const [status, setStatus]       = useState<{ type: "success" | "error"; msg: string } | null>(null);
+
+  const [themeMode, setThemeMode] = useState<ThemeMode>(getThemeMode());
+  const [accent, setAccent]       = useState(getAccentColor());
 
   useEffect(() => {
     getAutostart().then(setAutostart).finally(() => setLoading(false));
@@ -123,10 +139,64 @@ function GeneralTab() {
     }
   }
 
+  function applyTheme(mode: ThemeMode, color: string) {
+    setThemeMode(mode);
+    setAccent(color);
+    saveTheme(mode, color);
+  }
+
   if (loading) return <div className="p-6 text-[var(--muted)] text-sm">Loading…</div>;
 
   return (
     <div className="p-6 max-w-md mx-auto w-full flex flex-col gap-4">
+      {/* Theme */}
+      <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4 flex flex-col gap-3">
+        <div className="font-medium text-sm">Appearance</div>
+        <div className="flex gap-2">
+          {(["dark", "light", "system"] as ThemeMode[]).map(m => (
+            <button
+              key={m}
+              onClick={() => applyTheme(m, accent)}
+              className={`flex-1 py-1.5 rounded-lg text-xs font-medium border transition-colors capitalize
+                ${ themeMode === m
+                  ? "border-[var(--accent)] bg-[var(--accent)]/10 text-[var(--accent)]"
+                  : "border-[var(--border)] text-[var(--muted)] hover:text-[var(--text)]"
+                }`}
+            >
+              {m === "dark" ? "🌙 Dark" : m === "light" ? "☀️ Light" : "💻 System"}
+            </button>
+          ))}
+        </div>
+
+        <div>
+          <div className="text-xs text-[var(--muted)] mb-2">Accent color</div>
+          <div className="flex flex-wrap gap-2">
+            {ACCENT_PRESETS.map(p => (
+              <button
+                key={p.color}
+                title={p.label}
+                onClick={() => applyTheme(themeMode, p.color)}
+                className={`w-7 h-7 rounded-full transition-all border-2 ${
+                  accent === p.color ? "border-white scale-110" : "border-transparent hover:scale-105"
+                }`}
+                style={{ backgroundColor: p.color }}
+              />
+            ))}
+            <label className="w-7 h-7 rounded-full border-2 border-dashed border-[var(--border)]
+                              hover:border-[var(--accent)] cursor-pointer flex items-center justify-center"
+                   title="Custom color">
+              <input
+                type="color"
+                value={accent}
+                onChange={e => applyTheme(themeMode, e.target.value)}
+                className="opacity-0 absolute w-0 h-0"
+              />
+              <span className="text-[var(--muted)] text-xs">+</span>
+            </label>
+          </div>
+        </div>
+      </div>
+
       {/* Autostart toggle */}
       <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4
                       flex items-center justify-between gap-4">
@@ -1030,6 +1100,7 @@ function ProfilesSection({ profiles, onRename }: ProfilesSectionProps) {
 
 function DataTab({ onImported }: { onImported?: () => void }) {
   const fileRef    = useRef<HTMLInputElement>(null);
+  const bwFileRef  = useRef<HTMLInputElement>(null);
   const [trashItems, setTrashItems]   = useState<ItemSummary[]>([]);
   const [health,     setHealth]       = useState<HealthEntry[] | null>(null);
   const [status,     setStatus]       = useState<{ type: "success" | "error"; msg: string } | null>(null);
@@ -1045,6 +1116,12 @@ function DataTab({ onImported }: { onImported?: () => void }) {
   const [profiles,      setProfiles]      = useState<ProfileInfo[]>([]);
   const [sourceTag,     setSourceTag]     = useState<string>("");
   const [retag,         setRetag]         = useState<{ old: string; new: string } | null>(null);
+
+  // Bitwarden JSON import state
+  const [bwImporting,     setBwImporting]     = useState(false);
+  const [bwImportedCount, setBwImportedCount] = useState<number | null>(null);
+  const [bwError,         setBwError]         = useState("");
+  const [bwTag,           setBwTag]           = useState("");
 
   useEffect(() => {
     listDeletedItems()
@@ -1136,6 +1213,20 @@ function DataTab({ onImported }: { onImported?: () => void }) {
     } catch (err) { setStatus({ type: "error", msg: String(err) }); }
   }
 
+  async function handleBwFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setBwError(""); setBwImportedCount(null);
+    setBwImporting(true);
+    try {
+      const text = await file.text();
+      const count = await importBitwardenJson(text, bwTag.trim() || undefined);
+      setBwImportedCount(count);
+      onImported?.();
+    } catch (err) { setBwError(String(err)); }
+    finally { setBwImporting(false); e.target.value = ""; }
+  }
+
   const S = "flex flex-col gap-3 p-4 border border-[var(--border)] rounded-xl bg-[var(--surface)]";
   const H = "text-sm font-semibold text-[var(--text)]";
 
@@ -1152,9 +1243,42 @@ function DataTab({ onImported }: { onImported?: () => void }) {
         </div>
       )}
 
+      {/* Bitwarden JSON import */}
+      <div className={S}>
+        <div className={H}>🦊 Import from Bitwarden</div>
+        <p className="text-xs text-[var(--muted)] leading-relaxed">
+          Accepts Bitwarden JSON exports ({" "}
+          <span className="font-mono">Settings → Export vault → .json (unencrypted)</span>).
+          Imports logins, secure notes, cards, and identities.
+        </p>
+        <input
+          type="text"
+          value={bwTag}
+          onChange={e => setBwTag(e.target.value)}
+          placeholder="Tag for these imports (optional)…"
+          className="w-full bg-[var(--bg)] border border-[var(--border)] rounded-lg px-3 py-2
+                     text-sm text-[var(--text)] placeholder-[var(--muted)]
+                     focus:outline-none focus:border-[var(--accent)] transition-colors"
+        />
+        <input ref={bwFileRef} type="file" accept=".json,application/json" onChange={handleBwFile} className="hidden" />
+        <button
+          onClick={() => bwFileRef.current?.click()}
+          disabled={bwImporting}
+          className="w-full border-2 border-dashed border-[var(--border)] hover:border-[var(--accent)]
+                     rounded-xl py-5 text-sm text-[var(--muted)] hover:text-[var(--text)]
+                     disabled:opacity-50 transition-colors"
+        >
+          {bwImporting ? "Importing…" : "📂 Choose Bitwarden JSON file…"}
+        </button>
+        {bwError && <Alert type="error">{bwError}</Alert>}
+        {bwImportedCount !== null && (
+          <Alert type="success">✓ Imported {bwImportedCount} item{bwImportedCount !== 1 ? "s" : ""} from Bitwarden</Alert>
+        )}
+      </div>
+
       {/* Import CSV */}
       <div className={S}>
-        <div className={H}>📥 Import passwords</div>
+        <div className={H}>📥 Import passwords (CSV)</div>
         <p className="text-xs text-[var(--muted)] leading-relaxed">
           Accepts CSV exports from Chrome
           {" "}(<span className="font-mono">chrome://password-manager → Settings → Export</span>)

@@ -1058,6 +1058,169 @@ pub async fn delete_folder(state: State<'_, AppState>, id: String) -> Result<(),
     Ok(())
 }
 
+/// Renames a folder.
+#[tauri::command]
+pub async fn rename_folder(
+    state: State<'_, AppState>,
+    id: String,
+    name: String,
+) -> Result<(), AppError> {
+    let mut guard = state.vault.lock().map_err(|_| AppError::LockPoisoned)?;
+    let vault = guard.as_mut().ok_or(AppError::VaultLocked)?;
+    let uuid = Uuid::parse_str(&id)?;
+    vault.rename_folder(&uuid, &name)?;
+    Ok(())
+}
+
+// ── Bitwarden JSON import ──────────────────────────────────────────────────────
+
+#[derive(Debug, serde::Deserialize)]
+struct BitwardenJson {
+    items: Vec<BitwardenItem>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct BitwardenItem {
+    #[serde(rename = "type")]
+    item_type: u8,
+    name: String,
+    notes: Option<String>,
+    login: Option<BitwardenLogin>,
+    card: Option<BitwardenCard>,
+    identity: Option<BitwardenIdentity>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct BitwardenLogin {
+    username: Option<String>,
+    password: Option<String>,
+    uris: Option<Vec<BitwardenUri>>,
+    totp: Option<String>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct BitwardenUri {
+    uri: String,
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct BitwardenCard {
+    cardholder_name: Option<String>,
+    number: Option<String>,
+    exp_month: Option<String>,
+    exp_year: Option<String>,
+    code: Option<String>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct BitwardenIdentity {
+    first_name: Option<String>,
+    last_name: Option<String>,
+    email: Option<String>,
+    phone: Option<String>,
+    address1: Option<String>,
+    passport_number: Option<String>,
+}
+
+/// Imports items from a Bitwarden JSON export. Returns count of imported items.
+#[tauri::command]
+pub async fn import_bitwarden_json(
+    state: State<'_, AppState>,
+    content: String,
+    source_tag: Option<String>,
+) -> Result<usize, AppError> {
+    let bw: BitwardenJson = serde_json::from_str(&content)
+        .map_err(|e| AppError::Other(format!("Invalid Bitwarden JSON: {e}")))?;
+
+    let mut guard = state.vault.lock().map_err(|_| AppError::LockPoisoned)?;
+    let vault = guard.as_mut().ok_or(AppError::VaultLocked)?;
+
+    let mut count = 0usize;
+    for bw_item in bw.items {
+        let payload = match bw_item.item_type {
+            1 => {
+                let login = bw_item.login.unwrap_or(BitwardenLogin {
+                    username: None,
+                    password: None,
+                    uris: None,
+                    totp: None,
+                });
+                let url = login
+                    .uris
+                    .as_ref()
+                    .and_then(|u| u.first())
+                    .map(|u| u.uri.clone())
+                    .unwrap_or_default();
+                ItemPayload::Login {
+                    url,
+                    username: login.username.unwrap_or_default(),
+                    password: login.password.unwrap_or_default(),
+                    totp_secret: login.totp,
+                    notes: bw_item.notes,
+                    custom_fields: vec![],
+                    password_history: vec![],
+                }
+            }
+            2 => ItemPayload::Note {
+                content: bw_item.notes.unwrap_or_default(),
+            },
+            3 => {
+                let card = bw_item.card.unwrap_or(BitwardenCard {
+                    cardholder_name: None,
+                    number: None,
+                    exp_month: None,
+                    exp_year: None,
+                    code: None,
+                });
+                let exp_month: u8 = card
+                    .exp_month
+                    .as_deref()
+                    .and_then(|m| m.parse().ok())
+                    .unwrap_or(1);
+                let exp_year: u16 = card
+                    .exp_year
+                    .as_deref()
+                    .and_then(|y| y.parse().ok())
+                    .unwrap_or(2025);
+                ItemPayload::Card {
+                    cardholder: card.cardholder_name.unwrap_or_default(),
+                    number: card.number.unwrap_or_default(),
+                    expiry_month: exp_month,
+                    expiry_year: exp_year,
+                    cvv: card.code.unwrap_or_default(),
+                    notes: bw_item.notes,
+                }
+            }
+            4 => {
+                let id = bw_item.identity.unwrap_or(BitwardenIdentity {
+                    first_name: None,
+                    last_name: None,
+                    email: None,
+                    phone: None,
+                    address1: None,
+                    passport_number: None,
+                });
+                ItemPayload::Identity {
+                    first_name: id.first_name,
+                    last_name: id.last_name,
+                    email: id.email,
+                    phone: id.phone,
+                    address: id.address1,
+                    passport: id.passport_number,
+                    notes: bw_item.notes,
+                }
+            }
+            _ => continue,
+        };
+        vault.add_item(&bw_item.name, payload, None, false, source_tag.clone())?;
+        count += 1;
+    }
+    vault.save()?;
+    Ok(count)
+}
+
 // ── Password health report ─────────────────────────────────────────────────────
 
 #[derive(Debug, Serialize)]

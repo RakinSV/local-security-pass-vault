@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { ItemCard } from "../components/ItemCard";
-import { listItems, lockVault, listFolders, addFolder, deleteFolder, deleteItem } from "../api/vault";
+import { listItems, lockVault, listFolders, addFolder, deleteFolder, renameFolder, deleteItem, updateItem, getItem } from "../api/vault";
 import type { FolderInfo } from "../api/vault";
 import type { ItemSummary, ItemType } from "../types/vault";
 
@@ -32,6 +32,9 @@ export function VaultList({ onSelectItem, onAddItem, onLocked, onSwitchVault, on
   const [newFolderName, setNewFolderName]   = useState("");
   const [showFolderInput, setShowFolderInput] = useState(false);
   const [folderError, setFolderError]       = useState("");
+  const [renamingFolder, setRenamingFolder] = useState<string | null>(null);
+  const [renameDraft, setRenameDraft]       = useState("");
+  const [dragOverFolder, setDragOverFolder] = useState<string | null>(null);
 
   // Bulk select for trash
   const [selectMode, setSelectMode]   = useState(false);
@@ -93,6 +96,24 @@ export function VaultList({ onSelectItem, onAddItem, onLocked, onSwitchVault, on
     try {
       await deleteFolder(id);
       if (folderFilter === id) setFolderFilter(null);
+      load();
+    } catch (err) { alert(String(err)); }
+  }
+
+  async function handleRenameFolder(id: string) {
+    const name = renameDraft.trim();
+    if (!name) { setRenamingFolder(null); return; }
+    try {
+      await renameFolder(id, name);
+      setRenamingFolder(null);
+      load();
+    } catch (err) { alert(String(err)); }
+  }
+
+  async function handleDropOnFolder(itemId: string, folderId: string) {
+    try {
+      const item = await getItem(itemId);
+      await updateItem(item.id, item.title, item.payload, folderId, item.favorite, item.sourceTag ?? null);
       load();
     } catch (err) { alert(String(err)); }
   }
@@ -232,28 +253,74 @@ export function VaultList({ onSelectItem, onAddItem, onLocked, onSwitchVault, on
             )}
 
             {folders.map(folder => (
-              <div key={folder.id} className="group flex items-center gap-0.5">
-                <button
-                  onClick={() => {
-                    setFolderFilter(folder.id === folderFilter ? null : folder.id);
-                    setTagFilter(null); setFilter("all"); setShowFavOnly(false);
-                  }}
-                  className={`flex-1 min-w-0 text-left px-3 py-1.5 rounded-lg text-xs transition-colors truncate
-                    ${ folderFilter === folder.id
-                      ? "bg-[var(--accent)]/20 text-[var(--accent)]"
-                      : "text-[var(--muted)] hover:text-[var(--text)] hover:bg-[var(--surface)]"
-                    }`}
-                >
-                  {folder.icon ?? "📁"} {folder.name}
-                </button>
-                <button
-                  onClick={() => handleDeleteFolder(folder.id, folder.name)}
-                  title="Delete folder"
-                  className="opacity-0 group-hover:opacity-100 flex-shrink-0 text-[var(--muted)]
-                             hover:text-[var(--danger)] transition-all text-xs px-1"
-                >
-                  ×
-                </button>
+              <div
+                key={folder.id}
+                className={`group flex items-center gap-0.5 rounded-lg transition-colors
+                  ${ dragOverFolder === folder.id ? "bg-[var(--accent)]/20 ring-1 ring-[var(--accent)]" : "" }`}
+                onDragOver={e => { e.preventDefault(); setDragOverFolder(folder.id); }}
+                onDragLeave={() => setDragOverFolder(null)}
+                onDrop={e => {
+                  e.preventDefault();
+                  setDragOverFolder(null);
+                  const itemId = e.dataTransfer.getData("itemId");
+                  if (itemId) handleDropOnFolder(itemId, folder.id);
+                }}
+              >
+                {renamingFolder === folder.id ? (
+                  <div className="flex-1 flex gap-1 px-1 py-0.5">
+                    <input
+                      autoFocus
+                      value={renameDraft}
+                      onChange={e => setRenameDraft(e.target.value)}
+                      onKeyDown={e => {
+                        if (e.key === "Enter") { e.preventDefault(); handleRenameFolder(folder.id); }
+                        if (e.key === "Escape") setRenamingFolder(null);
+                      }}
+                      className="flex-1 min-w-0 bg-[var(--bg)] border border-[var(--accent)] rounded px-2 py-0.5
+                                 text-xs text-[var(--text)] focus:outline-none"
+                    />
+                    <button
+                      onClick={() => handleRenameFolder(folder.id)}
+                      className="px-1.5 py-0.5 bg-[var(--accent)] text-white text-xs rounded transition-colors"
+                    >✓</button>
+                    <button
+                      onClick={() => setRenamingFolder(null)}
+                      className="px-1.5 py-0.5 text-[var(--muted)] text-xs rounded transition-colors"
+                    >✕</button>
+                  </div>
+                ) : (
+                  <>
+                    <button
+                      onClick={() => {
+                        setFolderFilter(folder.id === folderFilter ? null : folder.id);
+                        setTagFilter(null); setFilter("all"); setShowFavOnly(false);
+                      }}
+                      className={`flex-1 min-w-0 text-left px-3 py-1.5 rounded-lg text-xs transition-colors truncate
+                        ${ folderFilter === folder.id
+                          ? "bg-[var(--accent)]/20 text-[var(--accent)]"
+                          : "text-[var(--muted)] hover:text-[var(--text)] hover:bg-[var(--surface)]"
+                        }`}
+                    >
+                      {folder.icon ?? "📁"} {folder.name}
+                    </button>
+                    <button
+                      onClick={() => { setRenamingFolder(folder.id); setRenameDraft(folder.name); }}
+                      title="Rename folder"
+                      className="opacity-0 group-hover:opacity-100 flex-shrink-0 text-[var(--muted)]
+                                 hover:text-[var(--accent)] transition-all text-xs px-0.5"
+                    >
+                      ✏
+                    </button>
+                    <button
+                      onClick={() => handleDeleteFolder(folder.id, folder.name)}
+                      title="Delete folder"
+                      className="opacity-0 group-hover:opacity-100 flex-shrink-0 text-[var(--muted)]
+                                 hover:text-[var(--danger)] transition-all text-xs px-1"
+                    >
+                      ×
+                    </button>
+                  </>
+                )}
               </div>
             ))}
           </div>
@@ -379,13 +446,18 @@ export function VaultList({ onSelectItem, onAddItem, onLocked, onSwitchVault, on
           ) : (
             <div className="px-1">
               {displayed.map(item => (
-                <ItemCard
+                <div
                   key={item.id}
-                  item={item}
-                  onClick={() => { if (!selectMode) onSelectItem(item.id); else toggleSelect(item.id, !selected.has(item.id)); }}
-                  selected={selectMode ? selected.has(item.id) : undefined}
-                  onSelect={selectMode ? toggleSelect : undefined}
-                />
+                  draggable={!selectMode}
+                  onDragStart={e => e.dataTransfer.setData("itemId", item.id)}
+                >
+                  <ItemCard
+                    item={item}
+                    onClick={() => { if (!selectMode) onSelectItem(item.id); else toggleSelect(item.id, !selected.has(item.id)); }}
+                    selected={selectMode ? selected.has(item.id) : undefined}
+                    onSelect={selectMode ? toggleSelect : undefined}
+                  />
+                </div>
               ))}
             </div>
           )}

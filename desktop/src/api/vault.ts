@@ -235,6 +235,12 @@ export const addFolder = (name: string, icon?: string) =>
 export const deleteFolder = (id: string) =>
   invoke<void>("delete_folder", { id });
 
+export const renameFolder = (id: string, name: string) =>
+  invoke<void>("rename_folder", { id, name });
+
+export const importBitwardenJson = (content: string, sourceTag?: string) =>
+  invoke<number>("import_bitwarden_json", { content, sourceTag: sourceTag ?? null });
+
 // ── Password health ────────────────────────────────────────────────────────────
 
 export interface HealthEntry {
