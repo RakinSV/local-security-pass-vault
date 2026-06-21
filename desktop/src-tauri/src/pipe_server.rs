@@ -30,6 +30,8 @@ struct PipeRequest {
     profile_email: Option<String>,
     #[serde(default)]
     browser_type: Option<String>,
+    #[serde(default)]
+    totp_code: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -218,6 +220,7 @@ async fn handle(app: &AppHandle, raw: &[u8]) -> PipeResponse {
         "status" => {
             let vault_guard = state.vault.lock().unwrap();
             let is_locked = vault_guard.is_none();
+            let has_2fa = vault_guard.as_ref().map(|v| v.has_2fa()).unwrap_or(false);
             let item_count: usize = if let Some(v) = vault_guard.as_ref() {
                 v.list_items().map(|l| l.len()).unwrap_or(0)
             } else {
@@ -231,7 +234,8 @@ async fn handle(app: &AppHandle, raw: &[u8]) -> PipeResponse {
                 serde_json::json!({
                     "isLocked": is_locked,
                     "itemCount": item_count,
-                    "signingPublicKey": pk_hex
+                    "signingPublicKey": pk_hex,
+                    "has2fa": has_2fa,
                 }),
                 &sk,
             )
@@ -311,6 +315,22 @@ async fn handle(app: &AppHandle, raw: &[u8]) -> PipeResponse {
                 Some(v) => v,
                 None => return PipeResponse::err(&id, "VaultLocked"),
             };
+
+            // If vault has 2FA, require a valid TOTP code with every credential request.
+            if vault.has_2fa() {
+                match req.totp_code.as_deref() {
+                    None | Some("") => {
+                        drop(vault_guard);
+                        return PipeResponse::err(&id, "TotpRequired");
+                    }
+                    Some(code) => {
+                        if vault.verify_2fa_code(code).is_err() {
+                            drop(vault_guard);
+                            return PipeResponse::err(&id, "TotpInvalid");
+                        }
+                    }
+                }
+            }
 
             let item = match vault.get_item(&uuid) {
                 Ok(Some(i)) => i,

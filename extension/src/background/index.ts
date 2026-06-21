@@ -49,6 +49,9 @@ chrome.runtime.onMessage.addListener(
               username: creds.username,
               password: creds.password,
             });
+          } else if (r.error === "TotpRequired") {
+            // Vault 2FA is enabled — user must use the popup to enter a TOTP code.
+            await chrome.tabs.sendMessage(tabId, { type: "TOTP_HINT" }).catch(() => {});
           }
         } catch {
           // best-effort
@@ -84,8 +87,12 @@ async function handlePopupMessage(msg: ExtensionMessage): Promise<unknown> {
       return r.data;
     }
     case "GET_CREDENTIALS": {
-      const r = await sendNative("get_credentials", { itemId: msg.itemId });
-      if (!r.success) throw new Error(r.error ?? "native error");
+      const r = await sendNative("get_credentials", { itemId: msg.itemId }, msg.totpCode);
+      if (!r.success) {
+        if (r.error === "TotpRequired") throw new Error("TotpRequired");
+        if (r.error === "TotpInvalid")  throw new Error("TotpInvalid");
+        throw new Error(r.error ?? "native error");
+      }
       return r.data;
     }
     case "LOCK": {

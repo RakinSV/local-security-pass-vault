@@ -66,6 +66,12 @@ export default function App() {
   const [genPw,    setGenPw]    = useState("");
   const [genCopied, setGenCopied] = useState(false);
 
+  // Vault 2FA state
+  const [totpNeeded,  setTotpNeeded]  = useState(false);
+  const [totpInput,   setTotpInput]   = useState("");
+  const [totpErr,     setTotpErr]     = useState("");
+  const [pendingItem, setPendingItem] = useState<ItemSummary | null>(null);
+
   useEffect(() => {
     init();
   }, []);
@@ -116,12 +122,13 @@ export default function App() {
     }
   }
 
-  async function fill(item: ItemSummary) {
+  async function fill(item: ItemSummary, totpCode?: string) {
     setFilling(item.id);
     try {
       const creds = await sendMsg<Credentials>({
         type: "GET_CREDENTIALS",
         itemId: item.id,
+        totpCode,
       });
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
       if (tab?.id) {
@@ -133,10 +140,32 @@ export default function App() {
       }
       window.close();
     } catch (e) {
-      setError(String(e));
+      const msg = e instanceof Error ? e.message : String(e);
+      if (msg === "TotpRequired") {
+        setPendingItem(item);
+        setTotpInput("");
+        setTotpErr("");
+        setTotpNeeded(true);
+      } else if (msg === "TotpInvalid") {
+        setTotpErr("Invalid code — try again.");
+      } else {
+        setError(msg);
+      }
     } finally {
       setFilling(null);
     }
+  }
+
+  async function submitTotp() {
+    if (!pendingItem || totpInput.length !== 6) return;
+    await fill(pendingItem, totpInput);
+  }
+
+  function cancelTotp() {
+    setTotpNeeded(false);
+    setPendingItem(null);
+    setTotpInput("");
+    setTotpErr("");
   }
 
   async function lock() {
@@ -210,6 +239,42 @@ export default function App() {
         <div className="icon">🔒</div>
         <p className="locked-title">Vault is locked</p>
         <p className="hint">Open LSPV desktop to unlock.</p>
+      </div>
+    );
+  }
+
+  if (totpNeeded && pendingItem) {
+    return (
+      <div className="totp-overlay">
+        <div className="totp-modal">
+          <div className="totp-title">2FA Verification</div>
+          <div className="totp-sub">
+            Enter 6-digit code to fill <strong>{pendingItem.title}</strong>
+          </div>
+          {totpErr && <div className="totp-err">{totpErr}</div>}
+          <input
+            type="text"
+            inputMode="numeric"
+            pattern="[0-9]*"
+            maxLength={6}
+            className="totp-input"
+            placeholder="000000"
+            value={totpInput}
+            autoFocus
+            onChange={(e) => setTotpInput(e.target.value.replace(/\D/g, ""))}
+            onKeyDown={(e) => { if (e.key === "Enter") submitTotp(); }}
+          />
+          <div className="totp-actions">
+            <button className="totp-cancel" onClick={cancelTotp}>Cancel</button>
+            <button
+              className="totp-submit"
+              onClick={submitTotp}
+              disabled={totpInput.length !== 6}
+            >
+              Verify & Fill
+            </button>
+          </div>
+        </div>
       </div>
     );
   }

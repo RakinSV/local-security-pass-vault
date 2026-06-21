@@ -348,7 +348,7 @@ impl Vault {
         write_meta(&self.paths.meta, &self.meta)
     }
 
-    fn verify_2fa_code(&self, code: &str) -> Result<()> {
+    pub fn verify_2fa_code(&self, code: &str) -> Result<()> {
         let row = self.db.read_vault_row()?;
         match (row.totp_secret_encrypted, row.totp_secret_nonce) {
             (Some(enc), Some(nonce_bytes)) => {

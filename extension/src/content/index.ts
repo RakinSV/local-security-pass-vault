@@ -213,6 +213,31 @@ function fillPasswordOnly(password: string): void {
   }
 }
 
+function showTotpHint(): void {
+  const id = "__vaultpass_totp_hint__";
+  if (document.getElementById(id)) return;
+  const el = document.createElement("div");
+  el.id = id;
+  Object.assign(el.style, {
+    position: "fixed",
+    bottom: "20px",
+    right: "12px",
+    zIndex: "2147483647",
+    background: "#1a1d27",
+    border: "1px solid #6366f1",
+    borderRadius: "10px",
+    padding: "10px 14px",
+    font: "13px system-ui, sans-serif",
+    color: "#e2e8f0",
+    boxShadow: "0 4px 24px rgba(0,0,0,.7)",
+    maxWidth: "260px",
+    lineHeight: "1.45",
+  } as Partial<CSSStyleDeclaration>);
+  el.textContent = "🔐 Vault 2FA required — open the extension popup to fill";
+  document.documentElement.appendChild(el);
+  setTimeout(() => el.remove(), 5_000);
+}
+
 chrome.runtime.onMessage.addListener(
   (msg: { type: string; username?: string; password?: string }, sender) => {
     // Reject messages from any source other than this extension.
@@ -221,6 +246,8 @@ chrome.runtime.onMessage.addListener(
       fillPage(msg.username, msg.password);
     } else if (msg.type === "FILL_PASSWORD_ONLY" && msg.password !== undefined) {
       fillPasswordOnly(msg.password);
+    } else if (msg.type === "TOTP_HINT") {
+      showTotpHint();
     }
   }
 );

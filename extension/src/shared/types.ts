@@ -17,6 +17,8 @@ export interface VaultStatus {
   itemCount: number;
   /** Desktop Ed25519 public key hex — returned on every status response for TOFU pairing. */
   signingPublicKey?: string;
+  /** True when the vault has 2FA enabled — get_credentials will require a TOTP code. */
+  has2fa?: boolean;
 }
 
 // Native messaging protocol (extension ↔ native host ↔ Tauri pipe)
@@ -27,6 +29,7 @@ export interface NativeRequest {
   profileId?: string;
   profileEmail?: string | null;
   browserType?: string;
+  totpCode?: string;
 }
 
 export interface NativeResponse {
@@ -41,7 +44,7 @@ export interface NativeResponse {
 export type ExtensionMessage =
   | { type: "GET_STATUS" }
   | { type: "SEARCH"; query: string; pageUrl: string }
-  | { type: "GET_CREDENTIALS"; itemId: string }
+  | { type: "GET_CREDENTIALS"; itemId: string; totpCode?: string }
   | { type: "LOCK" }
   | { type: "FILL"; username: string; password: string }
   | { type: "FILL_PASSWORD_ONLY"; password: string }

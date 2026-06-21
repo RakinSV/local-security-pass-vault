@@ -101,7 +101,8 @@ async function verifyResponseSignature(response: NativeResponse): Promise<void> 
 
 export async function sendNative(
   action: NativeRequest["action"],
-  payload?: unknown
+  payload?: unknown,
+  totpCode?: string,
 ): Promise<NativeResponse> {
   const profile = await getProfileInfo();
 
@@ -123,6 +124,7 @@ export async function sendNative(
       profileId: profile.profileId,
       profileEmail: profile.profileEmail,
       browserType: profile.browserType,
+      totpCode,
     };
 
     try {
