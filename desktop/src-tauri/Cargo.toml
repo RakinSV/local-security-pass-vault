@@ -1,6 +1,6 @@
 [package]
 name = "vaultpass-desktop"
-version = "0.2.1"
+version = "0.2.2"
 edition = "2021"
 
 # The _lib suffix avoids a name collision between the binary and lib on Windows.

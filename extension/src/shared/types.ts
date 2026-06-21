@@ -44,6 +44,7 @@ export type ExtensionMessage =
   | { type: "GET_CREDENTIALS"; itemId: string }
   | { type: "LOCK" }
   | { type: "FILL"; username: string; password: string }
+  | { type: "FILL_PASSWORD_ONLY"; password: string }
   | { type: "DETECT_FORM"; url: string }
   | { type: "FILL_FROM_PROMPT"; itemId: string };
 

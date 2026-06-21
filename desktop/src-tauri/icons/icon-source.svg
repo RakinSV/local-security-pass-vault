@@ -1,0 +1,74 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!-- Background -->
+  <rect width="512" height="512" fill="#0d0f1a"/>
+
+  <!-- Outer hexagon -->
+  <polygon fill="#111320" stroke="#5a5fcf" stroke-width="3"
+    points="256,24 454,138 454,374 256,488 58,374 58,138"/>
+
+  <!-- Subtle inner hex ring -->
+  <polygon fill="none" stroke="#4f52c0" stroke-width="1.5" opacity="0.3"
+    points="256,44 434,148 434,364 256,468 78,364 78,148"/>
+
+  <!-- Circuit lines from vertices -->
+  <line x1="256" y1="24" x2="256" y2="96" stroke="#5a5fcf" stroke-width="1.5" opacity="0.5"/>
+  <line x1="256" y1="416" x2="256" y2="488" stroke="#5a5fcf" stroke-width="1.5" opacity="0.5"/>
+  <line x1="58" y1="138" x2="116" y2="170" stroke="#5a5fcf" stroke-width="1.5" opacity="0.5"/>
+  <line x1="454" y1="138" x2="396" y2="170" stroke="#5a5fcf" stroke-width="1.5" opacity="0.5"/>
+  <line x1="58" y1="374" x2="116" y2="342" stroke="#5a5fcf" stroke-width="1.5" opacity="0.5"/>
+  <line x1="454" y1="374" x2="396" y2="342" stroke="#5a5fcf" stroke-width="1.5" opacity="0.5"/>
+
+  <!-- Vertex dots -->
+  <circle cx="256" cy="24" r="5" fill="#7b7fe8"/>
+  <circle cx="256" cy="488" r="5" fill="#7b7fe8"/>
+  <circle cx="58" cy="138" r="5" fill="#7b7fe8"/>
+  <circle cx="454" cy="138" r="5" fill="#7b7fe8"/>
+  <circle cx="58" cy="374" r="5" fill="#7b7fe8"/>
+  <circle cx="454" cy="374" r="5" fill="#7b7fe8"/>
+
+  <!-- Dashed accent ring -->
+  <circle cx="256" cy="256" r="136" fill="none" stroke="#5a5fcf" stroke-width="2"
+    stroke-dasharray="9 7"/>
+  <circle cx="256" cy="256" r="118" fill="none" stroke="#3f43a8" stroke-width="1"
+    stroke-dasharray="5 9" opacity="0.6"/>
+
+  <!-- Lock platform / body -->
+  <rect x="168" y="196" width="176" height="144" rx="18"
+    fill="#1a1c2e" stroke="#5a5fcf" stroke-width="2"/>
+
+  <!-- Lock shackle - outer path -->
+  <path d="M208,218 L208,178 Q208,140 256,140 Q304,140 304,178 L304,218"
+    fill="none" stroke="#7b7fe8" stroke-width="22" stroke-linecap="round"/>
+
+  <!-- Shackle interior fill (dark) -->
+  <path d="M220,215 L220,178 Q220,155 256,155 Q292,155 292,178 L292,215 Z"
+    fill="#1a1c2e"/>
+
+  <!-- Lock body fill (accent) -->
+  <rect x="182" y="208" width="148" height="118" rx="14" fill="#5a5fcf"/>
+
+  <!-- Keyhole outer circle -->
+  <circle cx="256" cy="262" r="20" fill="#0d0f1a"/>
+
+  <!-- Keyhole slot -->
+  <rect x="249" y="263" width="14" height="32" rx="5" fill="#0d0f1a"/>
+
+  <!-- Lock body corner decoration dots -->
+  <circle cx="200" cy="230" r="3.5" fill="#7b7fe8" opacity="0.5"/>
+  <circle cx="312" cy="230" r="3.5" fill="#7b7fe8" opacity="0.5"/>
+  <circle cx="200" cy="308" r="3.5" fill="#7b7fe8" opacity="0.5"/>
+  <circle cx="312" cy="308" r="3.5" fill="#7b7fe8" opacity="0.5"/>
+
+  <!-- Horizontal divider in lock body -->
+  <line x1="198" y1="286" x2="314" y2="286" stroke="#7b7fe8" stroke-width="1" opacity="0.35"/>
+
+  <!-- Binary dots row -->
+  <circle cx="213" cy="303" r="3" fill="#7b7fe8" opacity="0.7"/>
+  <circle cx="226" cy="303" r="3" fill="#0d0f1a" opacity="0.7"/>
+  <circle cx="239" cy="303" r="3" fill="#7b7fe8" opacity="0.7"/>
+  <circle cx="252" cy="303" r="3" fill="#7b7fe8" opacity="0.7"/>
+  <circle cx="265" cy="303" r="3" fill="#0d0f1a" opacity="0.7"/>
+  <circle cx="278" cy="303" r="3" fill="#7b7fe8" opacity="0.7"/>
+  <circle cx="291" cy="303" r="3" fill="#0d0f1a" opacity="0.7"/>
+  <circle cx="304" cy="303" r="3" fill="#7b7fe8" opacity="0.7"/>
+</svg>

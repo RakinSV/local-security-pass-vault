@@ -204,16 +204,23 @@ setTimeout(detectAndPrompt, 1_500);
 
 // ── Fill messages from popup and background ───────────────────────────────────
 
+function fillPasswordOnly(password: string): void {
+  const inputs = Array.from(document.querySelectorAll<HTMLInputElement>("input[type=password]"));
+  for (const input of inputs) {
+    if (!isVisible(input)) continue;
+    fillInput(input, password);
+    break;
+  }
+}
+
 chrome.runtime.onMessage.addListener(
   (msg: { type: string; username?: string; password?: string }, sender) => {
     // Reject messages from any source other than this extension.
     if (sender.id !== chrome.runtime.id) return;
-    if (
-      msg.type === "FILL" &&
-      msg.username !== undefined &&
-      msg.password !== undefined
-    ) {
+    if (msg.type === "FILL" && msg.username !== undefined && msg.password !== undefined) {
       fillPage(msg.username, msg.password);
+    } else if (msg.type === "FILL_PASSWORD_ONLY" && msg.password !== undefined) {
+      fillPasswordOnly(msg.password);
     }
   }
 );

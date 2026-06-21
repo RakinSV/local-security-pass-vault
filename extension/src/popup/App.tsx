@@ -23,6 +23,37 @@ const ICONS: Record<string, string> = {
   ssh_key: "🖥",
 };
 
+// Secure password generator — uses crypto.getRandomValues(), never Math.random()
+function generateSecurePassword(length = 20): string {
+  const upper  = "ABCDEFGHJKLMNPQRSTUVWXYZ";   // no I, O
+  const lower  = "abcdefghjkmnpqrstuvwxyz";     // no i, l, o
+  const digits = "23456789";                    // no 0, 1
+  const syms   = "!@#$%^&*-_+=?";
+  const all    = upper + lower + digits + syms;
+
+  const buf = new Uint32Array(length + 8);
+  crypto.getRandomValues(buf);
+
+  // Guarantee at least one char from each category
+  const required = [
+    upper[buf[0]  % upper.length],
+    lower[buf[1]  % lower.length],
+    digits[buf[2] % digits.length],
+    syms[buf[3]   % syms.length],
+  ];
+  const rest = Array.from({ length: length - 4 }, (_, i) => all[buf[i + 4] % all.length]);
+  const raw  = [...required, ...rest];
+
+  // Shuffle with Fisher-Yates using crypto random
+  const shuffle = new Uint32Array(raw.length);
+  crypto.getRandomValues(shuffle);
+  for (let i = raw.length - 1; i > 0; i--) {
+    const j = shuffle[i] % (i + 1);
+    [raw[i], raw[j]] = [raw[j], raw[i]];
+  }
+  return raw.join("");
+}
+
 export default function App() {
   const [status,   setStatus]   = useState<VaultStatus | null>(null);
   const [items,    setItems]    = useState<ItemSummary[]>([]);
@@ -32,6 +63,8 @@ export default function App() {
   const [error,    setError]    = useState("");
   const [filling,  setFilling]  = useState<string | null>(null);
   const [profileLabel, setProfileLabel] = useState<string | null>(null);
+  const [genPw,    setGenPw]    = useState("");
+  const [genCopied, setGenCopied] = useState(false);
 
   useEffect(() => {
     init();
@@ -39,7 +72,6 @@ export default function App() {
 
   async function init() {
     try {
-      // Get signed-in Google account email for this Chrome profile (empty = local profile)
       chrome.identity.getProfileUserInfo({ accountStatus: "ANY" }, (info) => {
         setProfileLabel(info.email || null);
       });
@@ -80,7 +112,7 @@ export default function App() {
       });
       setItems(results ?? []);
     } catch {
-      // ignore search errors silently
+      // ignore silently
     }
   }
 
@@ -113,7 +145,36 @@ export default function App() {
     setItems([]);
   }
 
-  // Client-side domain filter — applied on top of server-side text search
+  function generateAndShow() {
+    const pw = generateSecurePassword(20);
+    setGenPw(pw);
+    setGenCopied(false);
+  }
+
+  async function fillGenerated() {
+    if (!genPw) return;
+    try {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (tab?.id) {
+        await chrome.tabs.sendMessage(tab.id, {
+          type: "FILL_PASSWORD_ONLY",
+          password: genPw,
+        });
+      }
+      window.close();
+    } catch (e) {
+      setError(String(e));
+    }
+  }
+
+  async function copyGenerated() {
+    if (!genPw) return;
+    await navigator.clipboard.writeText(genPw);
+    setGenCopied(true);
+    setTimeout(() => setGenCopied(false), 2000);
+  }
+
+  // Client-side domain filter
   const visible = pageUrl
     ? items.filter(
         (it) =>
@@ -205,6 +266,29 @@ export default function App() {
           </li>
         ))}
       </ul>
+
+      {/* ── Password generator ── */}
+      <div className="gen-section">
+        <button className="gen-trigger" onClick={generateAndShow}>
+          ⚡ Generate password
+        </button>
+        {genPw && (
+          <div className="gen-result">
+            <span className="gen-pw" title={genPw}>{genPw}</span>
+            <div className="gen-actions">
+              <button className="gen-btn" onClick={fillGenerated} title="Fill into password field">
+                Fill
+              </button>
+              <button className="gen-btn gen-copy" onClick={copyGenerated}>
+                {genCopied ? "✓" : "Copy"}
+              </button>
+              <button className="gen-btn gen-regen" onClick={generateAndShow} title="Regenerate">
+                ↺
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
 
       <footer>{status.itemCount} items total</footer>
     </div>

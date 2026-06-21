@@ -189,6 +189,85 @@ header {
 .fill-btn:hover { background: var(--accent-h); }
 .fill-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
+/* ── Password Generator ── */
+
+.gen-section {
+  border-top: 1px solid var(--border);
+  padding: 8px 10px 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.gen-trigger {
+  width: 100%;
+  padding: 7px 10px;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: left;
+  letter-spacing: 0.02em;
+  transition: background 0.15s, border-color 0.15s;
+}
+.gen-trigger:hover {
+  background: var(--surface);
+  border-color: var(--accent);
+}
+
+.gen-result {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 8px 10px;
+}
+
+.gen-pw {
+  font-family: "Cascadia Code", "Fira Code", "Consolas", monospace;
+  font-size: 11px;
+  color: var(--text);
+  word-break: break-all;
+  letter-spacing: 0.04em;
+  user-select: all;
+}
+
+.gen-actions {
+  display: flex;
+  gap: 5px;
+}
+
+.gen-btn {
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+}
+.gen-btn:hover { background: var(--border); }
+
+.gen-btn:first-child {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  flex: 1;
+}
+.gen-btn:first-child:hover { background: var(--accent-h); border-color: var(--accent-h); }
+
+.gen-copy { min-width: 44px; text-align: center; }
+
+.gen-regen { min-width: 30px; text-align: center; color: var(--muted); }
+.gen-regen:hover { color: var(--text); }
+
 /* ── Footer ── */
 
 footer {
