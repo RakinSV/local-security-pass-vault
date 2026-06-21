@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect } from "react";
+import { copyToClipboard } from "../api/vault";
 
 interface Props {
   onUse: (password: string) => void;
@@ -103,10 +104,10 @@ export function PasswordGenerator({ onUse }: Props) {
 
   async function copy() {
     if (!password) return;
-    await navigator.clipboard.writeText(password);
+    await copyToClipboard(password);
     setCopied(true);
     setTimeout(() => {
-      navigator.clipboard.writeText("").catch(() => {});
+      copyToClipboard("").catch(() => {});
       setCopied(false);
     }, CLIPBOARD_TTL_MS);
   }

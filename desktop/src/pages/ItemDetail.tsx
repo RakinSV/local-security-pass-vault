@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { getItem, deleteItem, checkPasswordBreach } from "../api/vault";
+import { getItem, deleteItem, checkPasswordBreach, copyToClipboard } from "../api/vault";
 import { PasswordField } from "../components/PasswordField";
 import { TotpCode } from "../components/TotpCode";
 import type { Item, PasswordHistoryEntry } from "../types/vault";
@@ -16,11 +16,11 @@ const CLIPBOARD_TTL_MS = 30_000;
 function CopyBtn({ value }: { value: string }) {
   const [copied, setCopied] = useState(false);
   async function copy() {
-    await navigator.clipboard.writeText(value);
+    await copyToClipboard(value);
     setCopied(true);
     // Clear clipboard after 30 seconds (security.md).
     setTimeout(() => {
-      navigator.clipboard.writeText("").catch(() => {});
+      copyToClipboard("").catch(() => {});
       setCopied(false);
     }, CLIPBOARD_TTL_MS);
   }

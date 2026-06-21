@@ -122,6 +122,11 @@ export const setAutoLockSettings = (
 export const activityPing = () =>
   invoke<void>("activity_ping");
 
+/// Copies text to the clipboard, excluding it from cloud sync and clipboard
+/// history on Windows. Pass an empty string to clear the clipboard.
+export const copyToClipboard = (text: string) =>
+  invoke<void>("copy_to_clipboard", { text });
+
 // ── Keychain vault status ─────────────────────────────────────────────────────
 
 export interface KeychainVaultStatus {

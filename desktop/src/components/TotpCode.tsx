@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { generateTotp } from "../api/vault";
+import { generateTotp, copyToClipboard } from "../api/vault";
 import type { TotpCode as TotpCodeData } from "../api/vault";
 
 interface Props {
@@ -28,10 +28,10 @@ export function TotpCode({ secret }: Props) {
 
   async function copyCode() {
     if (!data) return;
-    await navigator.clipboard.writeText(data.code);
+    await copyToClipboard(data.code);
     setCopied(true);
     setTimeout(() => {
-      navigator.clipboard.writeText("").catch(() => {});
+      copyToClipboard("").catch(() => {});
       setCopied(false);
     }, CLIPBOARD_TTL_MS);
   }

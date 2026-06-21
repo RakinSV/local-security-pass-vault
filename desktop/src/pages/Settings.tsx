@@ -39,6 +39,7 @@ import {
   setupVault2fa,
   confirmVault2fa,
   disableVault2fa,
+  copyToClipboard,
 } from "../api/vault";
 import type { VaultTwoFaSetup } from "../api/vault";
 import type { AutoBackupEntry, HealthEntry, KeychainVaultStatus } from "../api/vault";
@@ -374,7 +375,7 @@ function TwoFaSection({ vaultOpen }: { vaultOpen: boolean }) {
                   {setup.secret}
                 </code>
                 <button
-                  onClick={() => navigator.clipboard.writeText(setup.secret)}
+                  onClick={() => copyToClipboard(setup.secret)}
                   className="text-xs px-2 py-2 rounded-lg border border-[var(--border)]
                              hover:bg-[var(--accent)]/10 transition-colors flex-shrink-0"
                   title="Copy secret key"

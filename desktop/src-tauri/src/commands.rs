@@ -1477,3 +1477,104 @@ pub async fn check_password_breach(password: String) -> Result<HibpResult, AppEr
 
     Ok(HibpResult { pwned_count, checked: true })
 }
+
+// ── Secure clipboard write ────────────────────────────────────────────────────
+
+/// Copies `text` to the system clipboard while excluding it from Windows cloud
+/// clipboard sync and clipboard history (via CF_EXCLUDEFROMCLOUDCLIPBOARD markers).
+/// On non-Windows platforms falls back to arboard.
+/// Pass an empty string to clear the clipboard.
+#[tauri::command]
+pub async fn copy_to_clipboard(text: String) -> Result<(), AppError> {
+    tokio::task::spawn_blocking(move || {
+        #[cfg(windows)]
+        return clipboard_write_win32(&text);
+
+        #[cfg(not(windows))]
+        return clipboard_write_arboard(&text);
+    })
+    .await
+    .map_err(|e| AppError::Other(format!("clipboard task panicked: {e}")))?
+}
+
+/// Windows implementation: uses Win32 clipboard API directly so we can set the
+/// cloud-exclusion formats that `navigator.clipboard` does not expose.
+#[cfg(windows)]
+fn clipboard_write_win32(text: &str) -> Result<(), AppError> {
+    extern "system" {
+        fn OpenClipboard(hWndNewOwner: isize) -> i32;
+        fn CloseClipboard() -> i32;
+        fn EmptyClipboard() -> i32;
+        fn SetClipboardData(uFormat: u32, hMem: isize) -> isize;
+        fn GlobalAlloc(uFlags: u32, dwBytes: usize) -> isize;
+        fn GlobalLock(hMem: isize) -> *mut std::ffi::c_void;
+        fn GlobalUnlock(hMem: isize) -> i32;
+        fn RegisterClipboardFormatW(lpszFormat: *const u16) -> u32;
+    }
+
+    const GMEM_MOVEABLE:   u32 = 0x0002;
+    const CF_UNICODETEXT:  u32 = 13;
+
+    unsafe {
+        if OpenClipboard(0) == 0 {
+            return Err(AppError::Other("OpenClipboard failed".into()));
+        }
+
+        EmptyClipboard();
+
+        // If text is empty we just clear and return.
+        if !text.is_empty() {
+            let utf16: Vec<u16> = text.encode_utf16().chain(std::iter::once(0)).collect();
+            let byte_len = utf16.len() * 2;
+
+            let hmem = GlobalAlloc(GMEM_MOVEABLE, byte_len);
+            if hmem == 0 {
+                CloseClipboard();
+                return Err(AppError::Other("GlobalAlloc failed".into()));
+            }
+
+            let ptr = GlobalLock(hmem) as *mut u16;
+            if ptr.is_null() {
+                CloseClipboard();
+                return Err(AppError::Other("GlobalLock failed".into()));
+            }
+            std::ptr::copy_nonoverlapping(utf16.as_ptr(), ptr, utf16.len());
+            GlobalUnlock(hmem);
+            SetClipboardData(CF_UNICODETEXT, hmem);
+
+            // "ExcludeClipboardContentFromMonitorProcessing" — presence of this
+            // format signals clipboard monitors to skip this entry entirely,
+            // preventing cloud sync (Microsoft Clipboard History sync, OneDrive, etc.).
+            //
+            // "CanIncludeInClipboardHistory" with NULL handle — Windows 10 1809+
+            // clipboard history respects this: NULL = exclude from local history too.
+            for name in &[
+                "ExcludeClipboardContentFromMonitorProcessing\0",
+                "CanIncludeInClipboardHistory\0",
+            ] {
+                let wide: Vec<u16> = name.encode_utf16().collect();
+                let cf = RegisterClipboardFormatW(wide.as_ptr());
+                if cf != 0 {
+                    SetClipboardData(cf, 0);
+                }
+            }
+        }
+
+        CloseClipboard();
+    }
+    Ok(())
+}
+
+/// Non-Windows fallback using arboard (already a dependency for QR reading).
+#[cfg(not(windows))]
+fn clipboard_write_arboard(text: &str) -> Result<(), AppError> {
+    let mut cb = arboard::Clipboard::new()
+        .map_err(|e| AppError::Other(format!("clipboard: {e}")))?;
+    if text.is_empty() {
+        cb.clear().map_err(|e| AppError::Other(format!("clipboard clear: {e}")))?;
+    } else {
+        cb.set_text(text)
+            .map_err(|e| AppError::Other(format!("clipboard write: {e}")))?;
+    }
+    Ok(())
+}

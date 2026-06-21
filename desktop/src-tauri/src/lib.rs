@@ -435,6 +435,7 @@ pub fn run() {
             commands::export_items_csv,
             commands::set_screen_capture_protection,
             commands::check_password_breach,
+            commands::copy_to_clipboard,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
