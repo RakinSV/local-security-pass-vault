@@ -811,7 +811,7 @@ dependencies = [
 
 [[package]]
 name = "core-vault"
-version = "0.2.4"
+version = "0.2.5"
 dependencies = [
  "bip39",
  "blake3",
@@ -5312,7 +5312,7 @@ dependencies = [
 
 [[package]]
 name = "vaultpass-desktop"
-version = "0.2.4"
+version = "0.2.5"
 dependencies = [
  "arboard",
  "core-vault",
@@ -5343,7 +5343,7 @@ dependencies = [
 
 [[package]]
 name = "vaultpass-native-host"
-version = "0.2.4"
+version = "0.2.5"
 
 [[package]]
 name = "vcpkg"

@@ -6,7 +6,7 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
-## [0.2.4] — 2026-06-23
+## [0.2.5] — 2026-06-23
 
 This release closes every finding from three independent security audits and
 graduates VaultPass from public beta to the first stable release.
@@ -229,6 +229,7 @@ Initial public beta. Core vault, browser extension, and CI established.
 
 ---
 
+[0.2.5]: https://github.com/RakinSV/local-security-pass-vault/releases/tag/v0.2.5
 [0.2.4]: https://github.com/RakinSV/local-security-pass-vault/releases/tag/v0.2.4
 [0.2.3-beta]: https://github.com/RakinSV/local-security-pass-vault/releases/tag/v0.2.3-beta
 [0.2.2-beta]: https://github.com/RakinSV/local-security-pass-vault/releases/tag/v0.2.2-beta
