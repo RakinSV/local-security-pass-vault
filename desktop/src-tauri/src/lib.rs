@@ -123,8 +123,6 @@ unsafe fn harden_windows() {
 #[cfg(windows)]
 fn start_windows_session_watcher(app: tauri::AppHandle) {
     std::thread::spawn(move || {
-        use std::sync::atomic::Ordering;
-
         extern "system" {
             fn GetSystemMetrics(nIndex: i32) -> i32;
             fn OpenInputDesktop(dwFlags: u32, fInherit: i32, dwDesiredAccess: u32) -> isize;
@@ -155,7 +153,7 @@ fn start_windows_session_watcher(app: tauri::AppHandle) {
             if protected && !was_protected {
                 was_protected = true;
                 let state = app.state::<state::AppState>();
-                if state.lock_on_screensaver.load(Ordering::Relaxed) {
+                if state.lock_on_screensaver() {
                     lock_vault_internal(&app);
                 }
             } else if !protected {
@@ -169,8 +167,6 @@ fn start_windows_session_watcher(app: tauri::AppHandle) {
 /// org.gnome.ScreenSaver) D-Bus ActiveChanged signals via zbus.
 #[cfg(target_os = "linux")]
 async fn watch_linux_screensaver(app: tauri::AppHandle) {
-    use std::sync::atomic::Ordering;
-
     if let Err(e) = watch_linux_screensaver_inner(&app).await {
         eprintln!("[screensaver] D-Bus watcher exited: {e}");
     }
@@ -182,7 +178,6 @@ async fn watch_linux_screensaver_inner(
 ) -> Result<(), Box<dyn std::error::Error>> {
     use zbus::{Connection, MatchRule, MessageStream};
     use futures_util::StreamExt as _;
-    use std::sync::atomic::Ordering;
 
     let conn = Connection::session().await?;
 
@@ -206,7 +201,7 @@ async fn watch_linux_screensaver_inner(
         if let Ok(active) = msg.body().deserialize::<bool>() {
             if active {
                 let state = app.state::<state::AppState>();
-                if state.lock_on_screensaver.load(Ordering::Relaxed) {
+                if state.lock_on_screensaver() {
                     lock_vault_internal(app);
                 }
             }
