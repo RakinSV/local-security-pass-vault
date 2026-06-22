@@ -120,6 +120,12 @@ impl Vault {
     pub fn create(dir: &Path, password: &[u8], hint: Option<String>) -> Result<Vault> {
         let paths = VaultPaths::new(dir);
         std::fs::create_dir_all(&paths.dir)?;
+        // Директория vault: только владелец (security.md §Права доступа).
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&paths.dir, std::fs::Permissions::from_mode(0o700)).ok();
+        }
 
         if paths.salt.exists() || paths.db.exists() {
             return Err(VaultError::Database("vault already exists".into()));
@@ -179,6 +185,8 @@ impl Vault {
     /// Неверный код → `TwoFactorFailed`.
     pub fn open(dir: &Path, password: &[u8], totp_code: Option<&str>) -> Result<Vault> {
         let paths = VaultPaths::new(dir);
+        // Снимаем read-only если файл был помечен при предыдущей блокировке.
+        file::set_writable(&paths.db).ok();
 
         // Соль обязательна.
         let salt_bytes = file::read_no_symlink(&paths.salt)?;

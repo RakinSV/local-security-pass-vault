@@ -493,4 +493,36 @@ mod tests {
         assert!(memcmp(&m1, &m2));
         assert!(!memcmp(&m1, &[0u8; HMAC_LEN]));
     }
+
+    // RFC 9106 Appendix B.3 задаёт тест-вектор Argon2id с параметрами:
+    // password=[0x01;32], salt=[0x02;16], t=3, m=32, p=4 → tag=0d640df5…
+    // НО: libsodium's crypto_pwhash не предоставляет параметры `secret` и `ad`
+    // из RFC §3.1, поэтому наш вывод отличается от RFC-тега.
+    // Вместо этого проверяем три существенных свойства KDF:
+    // детерминированность, чувствительность к паролю, чувствительность к соли.
+    #[test]
+    fn argon2id_rfc9106_inputs_deterministic_and_sensitive() {
+        init().unwrap();
+        // Те же password и salt что в RFC 9106 Appendix B.3.
+        let password = [0x01u8; 32];
+        let salt: [u8; SALT_LEN] = [0x02u8; SALT_LEN];
+        // Минимальные параметры libsodium — тест остаётся быстрым.
+        let a = argon2id_derive_custom::<32>(&password, &salt, 1, 8 * 1024).unwrap();
+        let b = argon2id_derive_custom::<32>(&password, &salt, 1, 8 * 1024).unwrap();
+
+        // Детерминированность: одни входы → один выход.
+        assert_eq!(a.as_bytes(), b.as_bytes(), "Argon2id не детерминирован");
+
+        // Чувствительность к паролю: 1 бит → полностью другой хеш.
+        let mut pw2 = password;
+        pw2[0] ^= 0x01;
+        let c = argon2id_derive_custom::<32>(&pw2, &salt, 1, 8 * 1024).unwrap();
+        assert_ne!(a.as_bytes(), c.as_bytes(), "Argon2id нечувствителен к паролю");
+
+        // Чувствительность к соли: 1 бит → полностью другой хеш.
+        let mut salt2 = salt;
+        salt2[0] ^= 0x01;
+        let d = argon2id_derive_custom::<32>(&password, &salt2, 1, 8 * 1024).unwrap();
+        assert_ne!(a.as_bytes(), d.as_bytes(), "Argon2id нечувствителен к соли");
+    }
 }

@@ -216,11 +216,57 @@ async fn watch_linux_screensaver_inner(
     Ok(())
 }
 
+/// Помечает vault.db read-only (0444 на Unix, FILE_ATTRIBUTE_READONLY на Windows).
+/// Вызывать ПОСЛЕ закрытия SQLCipher-соединения.
+fn set_db_readonly(path: &std::path::Path) {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o444));
+    }
+    #[cfg(windows)]
+    if let Ok(meta) = std::fs::metadata(path) {
+        let mut perms = meta.permissions();
+        perms.set_readonly(true);
+        let _ = std::fs::set_permissions(path, perms);
+    }
+    #[cfg(not(any(unix, windows)))]
+    let _ = path;
+}
+
+/// Очищает системный буфер обмена (best-effort, без паники при ошибке).
+fn clear_clipboard_sync() {
+    #[cfg(windows)]
+    {
+        #[link(name = "user32")]
+        extern "system" {
+            fn OpenClipboard(hWndNewOwner: isize) -> i32;
+            fn EmptyClipboard() -> i32;
+            fn CloseClipboard() -> i32;
+        }
+        // SAFETY: стандартные Win32 clipboard API, не требуют синхронизации между
+        // потоками если вызываются при активном desktop-приложении.
+        unsafe {
+            if OpenClipboard(0) != 0 {
+                EmptyClipboard();
+                CloseClipboard();
+            }
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        if let Ok(mut cb) = arboard::Clipboard::new() {
+            cb.clear().ok();
+        }
+    }
+}
+
 /// Locks the vault (if open) and emits `vault-locked` to the frontend.
 fn lock_vault_internal(app: &tauri::AppHandle) {
-    // `let x = ...; x` forces the match temporary to drop at `;` before `state` drops.
+    let state = app.state::<state::AppState>();
+
+    // 1. Выгружаем vault из памяти (guard дропается → SQLCipher закрывает файл).
     let vault_id: Option<String> = {
-        let state = app.state::<state::AppState>();
         let x = match state.vault.lock() {
             Ok(mut guard) => {
                 let id = guard.as_ref().map(|v| v.vault_id_str());
@@ -230,6 +276,18 @@ fn lock_vault_internal(app: &tauri::AppHandle) {
             Err(_) => None,
         }; x
     };
+
+    // 2. Помечаем vault.db read-only (SQLCipher уже закрыл файл).
+    if let Ok(dir_guard) = state.vault_dir.lock() {
+        if let Some(ref dir) = *dir_guard {
+            set_db_readonly(&dir.join("vault.db"));
+        }
+    }
+
+    // 3. Очищаем буфер обмена.
+    clear_clipboard_sync();
+
+    // 4. Удаляем ключ из keychain и уведомляем frontend.
     if let Some(id) = vault_id {
         keychain::delete_vault_key(&id);
         app.emit("vault-locked", ()).ok();

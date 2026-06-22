@@ -83,7 +83,29 @@ pub fn restrict_permissions(path: &Path) -> Result<()> {
     }
     #[cfg(not(unix))]
     {
-        let _ = path; // На Windows ACL-ограничения выполняет desktop-слой.
+        let _ = path;
+    }
+    Ok(())
+}
+
+/// Восстанавливает права записи (0600 на Unix, снимает read-only на Windows).
+/// Вызывать перед открытием vault.db, если файл был помечен read-only при lock.
+pub fn set_writable(path: &Path) -> Result<()> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let perms = std::fs::Permissions::from_mode(0o600);
+        std::fs::set_permissions(path, perms)?;
+    }
+    #[cfg(not(unix))]
+    {
+        if let Ok(meta) = std::fs::metadata(path) {
+            let mut perms = meta.permissions();
+            if perms.readonly() {
+                perms.set_readonly(false);
+                std::fs::set_permissions(path, perms)?;
+            }
+        }
     }
     Ok(())
 }
