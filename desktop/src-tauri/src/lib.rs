@@ -337,6 +337,17 @@ pub fn run() {
                 });
             }
 
+            // ── Panic hook: zero vault keys before crashing ───────────────────
+            // try_lock avoids deadlock if the panicking thread already holds the lock.
+            let panic_handle = app.handle().clone();
+            let prev_hook = std::panic::take_hook();
+            std::panic::set_hook(Box::new(move |info| {
+                if let Ok(mut guard) = panic_handle.state::<state::AppState>().vault.try_lock() {
+                    *guard = None; // Drop Vault → sodium_memzero all keys
+                }
+                prev_hook(info);
+            }));
+
             // ── Auto-lock idle checker (every 30 s) ───────────────────────────
             let handle_al = app.handle().clone();
             tauri::async_runtime::spawn(async move {

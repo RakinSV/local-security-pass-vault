@@ -494,6 +494,17 @@ mod tests {
         assert!(!memcmp(&m1, &[0u8; HMAC_LEN]));
     }
 
+    #[test]
+    fn salt_uniqueness_per_vault() {
+        // 100 независимых vault → 100 уникальных солей (testing.md §Unit-тесты).
+        init().unwrap();
+        use std::collections::HashSet;
+        let salts: HashSet<[u8; SALT_LEN]> = (0..100)
+            .map(|_| gen_salt().unwrap())
+            .collect();
+        assert_eq!(salts.len(), 100, "salt collision detected");
+    }
+
     // RFC 9106 Appendix B.3 задаёт тест-вектор Argon2id с параметрами:
     // password=[0x01;32], salt=[0x02;16], t=3, m=32, p=4 → tag=0d640df5…
     // НО: libsodium's crypto_pwhash не предоставляет параметры `secret` и `ad`

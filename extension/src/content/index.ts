@@ -27,6 +27,14 @@ function fillInput(input: HTMLInputElement, value: string): void {
   input.dispatchEvent(new Event("change", { bubbles: true }));
 }
 
+// For password fields: clear the DOM value 100 ms after fill so page scripts
+// cannot read the plaintext from the element (browser-extension.md).
+// The framework has already captured the value via the dispatched events above.
+function fillPasswordInput(input: HTMLInputElement, password: string): void {
+  fillInput(input, password);
+  setTimeout(() => { nativeInputValueSetter?.call(input, ""); }, 100);
+}
+
 function fillPage(username: string, password: string): void {
   const inputs = Array.from(document.querySelectorAll<HTMLInputElement>("input"));
   let filledUser = false;
@@ -38,7 +46,7 @@ function fillPage(username: string, password: string): void {
       fillInput(input, username);
       filledUser = true;
     } else if (!filledPass && input.type === "password") {
-      fillInput(input, password);
+      fillPasswordInput(input, password);
       filledPass = true;
     }
     if (filledUser && filledPass) break;
@@ -208,7 +216,7 @@ function fillPasswordOnly(password: string): void {
   const inputs = Array.from(document.querySelectorAll<HTMLInputElement>("input[type=password]"));
   for (const input of inputs) {
     if (!isVisible(input)) continue;
-    fillInput(input, password);
+    fillPasswordInput(input, password);
     break;
   }
 }

@@ -137,4 +137,30 @@ mod tests {
         let p = std::env::temp_dir().join("vp_definitely_missing_xyz.db");
         assert!(matches!(read_no_symlink(&p), Err(VaultError::NotFound)));
     }
+
+    /// Simulates a crash that left a stale .tmp file: the original vault.db must
+    /// be intact (atomic_write_survives_sigkill from testing.md — the OS rename
+    /// is atomic so a partial .tmp cannot corrupt the target).
+    #[test]
+    fn atomic_write_stale_tmp_leaves_original_intact() {
+        let dir = std::env::temp_dir().join(format!("vp_atomic_{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let target = dir.join("vault.db");
+        let tmp    = target.with_extension("tmp");
+
+        atomic_write(&target, b"original content").unwrap();
+
+        // Simulate a crashed write: leave a corrupt .tmp behind.
+        std::fs::write(&tmp, b"partial-write-at-crash").unwrap();
+
+        // Original must still be readable.
+        assert_eq!(read_no_symlink(&target).unwrap(), b"original content");
+
+        // A fresh atomic_write must succeed and atomically replace the target.
+        atomic_write(&target, b"updated content").unwrap();
+        assert_eq!(read_no_symlink(&target).unwrap(), b"updated content");
+        assert!(!tmp.exists(), "tmp must be cleaned up after atomic_write");
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
 }

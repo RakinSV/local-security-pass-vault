@@ -6,7 +6,8 @@
   "scripts": {
     "build": "vite build && vite build --config vite.content.config.ts",
     "dev": "concurrently \"vite build --watch\" \"vite build --config vite.content.config.ts --watch\"",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
   },
   "dependencies": {
     "react": "^18",
@@ -20,6 +21,7 @@
     "@vitejs/plugin-react": "^4",
     "concurrently": "^8",
     "typescript": "^5",
-    "vite": "^5"
+    "vite": "^5",
+    "vitest": "^1"
   }
 }
