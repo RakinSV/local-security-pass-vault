@@ -29,7 +29,7 @@ webbrowser           = "1"
 qrcode               = "0.13"
 # TOTP QR decoding from clipboard image
 arboard              = { version = "3", default-features = false, features = ["image-data"] }
-rqrr                 = "0.9"
+rqrr                 = "0.10"
 image                = { version = "0.25", default-features = false, features = ["png", "jpeg", "bmp", "gif"] }
 # HaveIBeenPwned k-anonymity password breach check
 sha1                 = "0.10"
