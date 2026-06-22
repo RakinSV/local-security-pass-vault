@@ -135,14 +135,20 @@ jobs:
         run: |
           TAG="${{ github.ref_name }}"
           REPO="${{ github.repository }}"
-          # Create release if it doesn't exist yet
+          # Create release if it doesn't exist yet.
+          # Mark as pre-release only for tags containing -alpha/-beta/-rc;
+          # stable version tags (e.g. v0.2.4) get a proper release.
           if ! gh release view "$TAG" --repo "$REPO" &>/dev/null; then
             echo "Creating release $TAG"
+            PRERELEASE_FLAG=""
+            if echo "$TAG" | grep -qE '\-(alpha|beta|rc)[0-9]*$'; then
+              PRERELEASE_FLAG="--prerelease"
+            fi
             gh release create "$TAG" \
               --repo "$REPO" \
               --title "LSPV $TAG" \
               --generate-notes \
-              --prerelease
+              $PRERELEASE_FLAG
           else
             echo "Release $TAG already exists"
           fi

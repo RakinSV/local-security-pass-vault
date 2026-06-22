@@ -1,16 +1,13 @@
 {
   "manifest_version": 3,
   "name": "LSPV",
-  "version": "0.2.2",
+  "version": "0.2.4",
   "description": "Local Security Pass Vault — offline password manager, no cloud, no telemetry.",
 
   "permissions": [
     "activeTab",
-    "tabs",
     "nativeMessaging",
-    "clipboardWrite",
-    "storage",
-    "identity"
+    "clipboardWrite"
   ],
   "host_permissions": [],
 
@@ -27,7 +24,7 @@
     {
       "matches": ["<all_urls>"],
       "js": ["content.js"],
-      "run_at": "document_idle"
+      "run_at": "document_start"
     }
   ],
 

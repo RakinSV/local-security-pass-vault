@@ -30,6 +30,12 @@ const _: () = {
     assert!(SALT_LEN == ffi::crypto_pwhash_SALTBYTES as usize);
     assert!(HMAC_LEN == ffi::crypto_auth_hmacsha256_BYTES as usize);
     assert!(KEY_LEN == ffi::crypto_auth_hmacsha256_KEYBYTES as usize);
+    // L4: Guard KDF parameters against accidental reduction.
+    // Minimums are libsodium INTERACTIVE level: opslimit≥2, memlimit≥64MiB.
+    // libsodium's OPSLIMIT_SENSITIVE/MEMLIMIT_SENSITIVE are C functions, not
+    // constants, so we guard against the literal floor values instead.
+    assert!(KDF_OPSLIMIT >= 2, "KDF_OPSLIMIT must be at least 2 (INTERACTIVE level)");
+    assert!(KDF_MEMLIMIT >= 64 * 1024 * 1024, "KDF_MEMLIMIT must be at least 64 MiB");
 };
 
 // ── Инициализация ────────────────────────────────────────────────────────────
@@ -110,6 +116,9 @@ impl<const N: usize> Secret<N> {
         // Неудача не фатальна (ключ всё равно будет обнулён), но фиксируем флаг.
         // SAFETY: указатель валиден, длина соответствует выделению.
         let rc = unsafe { ffi::sodium_mlock(data.as_mut_ptr() as *mut _, N) };
+        if rc != 0 {
+            eprintln!("[security] mlock failed for {N}-byte key — swap protection unavailable (check RLIMIT_MEMLOCK)");
+        }
         Secret {
             data,
             locked: rc == 0,
@@ -196,6 +205,12 @@ impl<const N: usize> Secret<N> {
 
 impl<const N: usize> Drop for Secret<N> {
     fn drop(&mut self) {
+        // C4 note (DPAPI ordering): we deliberately do NOT call dpapi_unprotect()
+        // before zeroing.  CryptProtectMemory works in-place with no external
+        // plaintext copy, so zeroing the buffer destroys the key material
+        // regardless of whether it is currently DPAPI-encrypted.  Calling
+        // dpapi_unprotect() first would briefly re-expose the plaintext before
+        // sodium_memzero() runs — the opposite of what we want.
         // SAFETY: указатель валиден до конца drop; len = N.
         unsafe {
             ffi::sodium_memzero(self.data.as_mut_ptr() as *mut _, N);

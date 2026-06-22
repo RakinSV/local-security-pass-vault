@@ -459,6 +459,19 @@ pub async fn validate_seed_phrase(phrase: String) -> bool {
     core_vault::backup::validate_mnemonic(&phrase)
 }
 
+/// Validates a path supplied by the frontend: must be absolute and contain no
+/// `..` components.  Prevents path-traversal attacks on export/restore.
+fn validate_user_path(path_str: &str) -> Result<PathBuf, AppError> {
+    let p = PathBuf::from(path_str);
+    if !p.is_absolute() {
+        return Err(AppError::Other("path must be absolute".into()));
+    }
+    if p.components().any(|c| c == std::path::Component::ParentDir) {
+        return Err(AppError::Other("path must not contain '..'".into()));
+    }
+    Ok(p)
+}
+
 /// Exports the vault to an encrypted backup file (v2 format, `.vbk`).
 /// The vault must be unlocked. `seed_phrase` must be the 24-word BIP-39 mnemonic.
 /// A timestamped copy is also saved to app_data_dir/backups/ (last 7 retained).
@@ -469,13 +482,14 @@ pub async fn export_backup(
     backup_path: String,
     seed_phrase: String,
 ) -> Result<(), AppError> {
+    let backup_path = validate_user_path(&backup_path)?;
     {
         let guard = state.lock_vault_for_use()?;
         let vault = guard.as_ref().ok_or(AppError::VaultLocked)?;
-        vault.export_backup(std::path::Path::new(&backup_path), &seed_phrase)?;
+        vault.export_backup(&backup_path, &seed_phrase)?;
     }
     // Non-fatal: save a timestamped copy and rotate (keep 7 newest)
-    let _ = auto_save_backup(&app, std::path::Path::new(&backup_path));
+    let _ = auto_save_backup(&app, &backup_path);
     Ok(())
 }
 
@@ -487,6 +501,14 @@ fn auto_save_backup(app: &tauri::AppHandle, source: &std::path::Path) -> Result<
         .join("backups");
     std::fs::create_dir_all(&backups_dir)
         .map_err(|e| AppError::Other(e.to_string()))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(
+            &backups_dir,
+            std::fs::Permissions::from_mode(0o700),
+        );
+    }
 
     let ts = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -589,11 +611,9 @@ pub async fn restore_backup(
     dest_dir: String,
     seed_phrase: String,
 ) -> Result<(), AppError> {
-    core_vault::Vault::restore_from_backup(
-        std::path::Path::new(&backup_path),
-        std::path::Path::new(&dest_dir),
-        &seed_phrase,
-    )?;
+    let backup_path = validate_user_path(&backup_path)?;
+    let dest_dir    = validate_user_path(&dest_dir)?;
+    core_vault::Vault::restore_from_backup(&backup_path, &dest_dir, &seed_phrase)?;
     Ok(())
 }
 
@@ -1060,6 +1080,7 @@ pub async fn delete_folder(state: State<'_, AppState>, id: String) -> Result<(),
     let vault = guard.as_mut().ok_or(AppError::VaultLocked)?;
     let uuid = Uuid::parse_str(&id)?;
     vault.delete_folder(&uuid)?;
+    vault.save()?;
     Ok(())
 }
 
@@ -1074,6 +1095,7 @@ pub async fn rename_folder(
     let vault = guard.as_mut().ok_or(AppError::VaultLocked)?;
     let uuid = Uuid::parse_str(&id)?;
     vault.rename_folder(&uuid, &name)?;
+    vault.save()?;
     Ok(())
 }
 

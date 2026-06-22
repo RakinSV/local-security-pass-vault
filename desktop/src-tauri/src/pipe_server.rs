@@ -19,6 +19,143 @@ use tokio::net::windows::named_pipe::{PipeMode, ServerOptions};
 
 pub const PIPE_NAME: &str = r"\\.\pipe\vaultpass";
 
+// ── Windows: owner-only DACL for the named pipe ──────────────────────────────
+//
+// We use raw `extern "system"` declarations instead of importing from
+// windows-sys feature flags to avoid feature-gating complexities.
+// All APIs have been stable since Windows XP.
+//
+// The Box allocation keeps sd_buf + acl_buf at a stable heap address so that
+// the pointer stored in sa.lp_security_descriptor remains valid.
+
+#[cfg(windows)]
+#[allow(non_snake_case)]
+mod win_dacl {
+    use std::ffi::c_void;
+    use std::mem;
+
+    #[link(name = "Kernel32")]
+    extern "system" {
+        pub fn GetCurrentProcess() -> isize;
+        pub fn CloseHandle(hObject: isize) -> i32;
+    }
+    #[link(name = "Advapi32")]
+    extern "system" {
+        pub fn OpenProcessToken(
+            ProcessHandle: isize, DesiredAccess: u32, TokenHandle: *mut isize,
+        ) -> i32;
+        pub fn GetTokenInformation(
+            TokenHandle: isize, TokenInformationClass: i32,
+            TokenInformation: *mut c_void, TokenInformationLength: u32,
+            ReturnLength: *mut u32,
+        ) -> i32;
+        pub fn GetLengthSid(pSid: *mut c_void) -> u32;
+        pub fn InitializeSecurityDescriptor(
+            pSD: *mut c_void, dwRevision: u32,
+        ) -> i32;
+        pub fn InitializeAcl(
+            pAcl: *mut c_void, nAclLength: u32, dwAclRevision: u32,
+        ) -> i32;
+        pub fn AddAccessAllowedAce(
+            pAcl: *mut c_void, dwAceRevision: u32,
+            AccessMask: u32, pSid: *mut c_void,
+        ) -> i32;
+        pub fn SetSecurityDescriptorDacl(
+            pSD: *mut c_void, bDaclPresent: i32,
+            pDacl: *mut c_void, bDaclDefaulted: i32,
+        ) -> i32;
+    }
+
+    // TOKEN_USER = { Sid: *mut c_void, Attributes: u32 }
+    #[repr(C)]
+    struct SidAndAttributes { sid: *mut c_void, _attributes: u32 }
+    #[repr(C)]
+    struct TokenUser { user: SidAndAttributes }
+
+    // SECURITY_ATTRIBUTES (#[repr(C)] — same layout as Win32 struct)
+    #[repr(C)]
+    pub struct SecurityAttributes {
+        pub n_length:               u32,
+        pub lp_security_descriptor: *mut c_void,
+        pub b_inherit_handle:       i32,
+    }
+
+    // SECURITY_DESCRIPTOR is opaque; 64 bytes is safely larger than 40 (64-bit)
+    // or 20 (32-bit).
+    const SD_BUF: usize = 64;
+
+    pub struct OwnerOnlySD {
+        pub(super) sd:      [u8; SD_BUF],
+        pub(super) acl_buf: [u8; 256],
+        pub sa:             SecurityAttributes,
+    }
+
+    /// Build an owner-only SECURITY_ATTRIBUTES for a named pipe.
+    /// Returns None on any failure; caller falls back to the default ACL.
+    pub fn build() -> Option<Box<OwnerOnlySD>> {
+        unsafe {
+            // 1. Open process token to get the current user's SID.
+            let mut token: isize = 0;
+            if OpenProcessToken(GetCurrentProcess(), 0x0008 /* TOKEN_QUERY */, &mut token) == 0 {
+                return None;
+            }
+            let mut needed: u32 = 0;
+            GetTokenInformation(token, 1 /* TokenUser */, std::ptr::null_mut(), 0, &mut needed);
+            let mut tok_buf = vec![0u8; needed as usize];
+            let ok = GetTokenInformation(
+                token, 1, tok_buf.as_mut_ptr().cast(), needed, &mut needed,
+            );
+            CloseHandle(token);
+            if ok == 0 || needed == 0 { return None; }
+
+            let user    = &*(tok_buf.as_ptr() as *const TokenUser);
+            let sid     = user.user.sid;
+            let sid_len = GetLengthSid(sid);
+            if sid_len == 0 { return None; }
+
+            // 2. Heap-allocate — internal pointers are stable while the Box lives.
+            let mut r = Box::new(OwnerOnlySD {
+                sd:      [0u8; SD_BUF],
+                acl_buf: [0u8; 256],
+                sa:      SecurityAttributes {
+                    n_length: mem::size_of::<SecurityAttributes>() as u32,
+                    lp_security_descriptor: std::ptr::null_mut(),
+                    b_inherit_handle: 0,
+                },
+            });
+
+            // 3. Blank security descriptor.
+            if InitializeSecurityDescriptor(
+                r.sd.as_mut_ptr().cast(), 1 /* SECURITY_DESCRIPTOR_REVISION */,
+            ) == 0 { return None; }
+
+            // 4. Empty ACL (256 bytes >> one ACE for one user SID).
+            if InitializeAcl(
+                r.acl_buf.as_mut_ptr().cast(), r.acl_buf.len() as u32,
+                2 /* ACL_REVISION */,
+            ) == 0 { return None; }
+
+            // 5. Grant GENERIC_ALL to the current user.
+            if AddAccessAllowedAce(
+                r.acl_buf.as_mut_ptr().cast(), 2 /* ACL_REVISION */,
+                0x1000_0000u32, /* GENERIC_ALL */ sid,
+            ) == 0 { return None; }
+
+            // 6. Attach DACL to the security descriptor.
+            if SetSecurityDescriptorDacl(
+                r.sd.as_mut_ptr().cast(),
+                1,                             // bDaclPresent = TRUE
+                r.acl_buf.as_mut_ptr().cast(), // pDacl
+                0,                             // bDaclDefaulted = FALSE
+            ) == 0 { return None; }
+
+            // 7. Point sa at sd — both in the same Box, so the pointer is stable.
+            r.sa.lp_security_descriptor = r.sd.as_mut_ptr().cast();
+            Some(r)
+        }
+    }
+}
+
 #[derive(Deserialize)]
 struct PipeRequest {
     id: String,
@@ -95,9 +232,29 @@ pub async fn run(app: AppHandle) {
 async fn accept_one(app: &AppHandle) -> std::io::Result<()> {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-    let server = ServerOptions::new()
-        .pipe_mode(PipeMode::Byte)
-        .create(PIPE_NAME)?;
+    // Restrict the pipe to the current user — prevents other local Windows
+    // users from connecting and querying vault credentials.
+    // The block scope ensures `_sd` (which contains *mut c_void, hence !Send)
+    // is dropped before the first .await point, keeping the future Send.
+    let server = {
+        let _sd = win_dacl::build();
+        let mut opts = ServerOptions::new();
+        opts.pipe_mode(PipeMode::Byte);
+        if let Some(ref sd) = _sd {
+            // SAFETY: Windows copies the SD into the kernel during CreateNamedPipe;
+            // `_sd` need not live beyond this call.
+            unsafe {
+                opts.create_with_security_attributes_raw(
+                    PIPE_NAME,
+                    &sd.sa as *const win_dacl::SecurityAttributes as *mut _,
+                )?
+            }
+        } else {
+            eprintln!("[pipe] could not build owner-only DACL — pipe open to all local users");
+            opts.create(PIPE_NAME)?
+        }
+        // _sd drops here
+    };
 
     server.connect().await?;
 
@@ -105,6 +262,7 @@ async fn accept_one(app: &AppHandle) -> std::io::Result<()> {
     let app = app.clone();
 
     tokio::spawn(async move {
+        let mut totp_fail_count: u8 = 0;
         loop {
             // Read 4-byte length prefix
             let mut len_buf = [0u8; 4];
@@ -121,7 +279,7 @@ async fn accept_one(app: &AppHandle) -> std::io::Result<()> {
                 break;
             }
 
-            let resp = handle(&app, &msg_buf).await;
+            let resp = handle(&app, &msg_buf, &mut totp_fail_count).await;
             let resp_bytes = serde_json::to_vec(&resp).unwrap_or_default();
 
             let resp_len = (resp_bytes.len() as u32).to_le_bytes();
@@ -129,6 +287,11 @@ async fn accept_one(app: &AppHandle) -> std::io::Result<()> {
                 break;
             }
             if stream.write_all(&resp_bytes).await.is_err() {
+                break;
+            }
+
+            // Drop connection after 5 consecutive TOTP failures to prevent brute force.
+            if totp_fail_count >= 5 {
                 break;
             }
         }
@@ -168,6 +331,7 @@ async fn run_unix(app: AppHandle) {
         let Ok((mut stream, _)) = listener.accept().await else { continue };
         let app = app.clone();
         tokio::spawn(async move {
+            let mut totp_fail_count: u8 = 0;
             loop {
                 let mut len_buf = [0u8; 4];
                 if stream.read_exact(&mut len_buf).await.is_err() { break; }
@@ -175,11 +339,12 @@ async fn run_unix(app: AppHandle) {
                 if len == 0 || len > 1024 * 1024 { break; }
                 let mut msg_buf = vec![0u8; len];
                 if stream.read_exact(&mut msg_buf).await.is_err() { break; }
-                let resp = handle(&app, &msg_buf).await;
+                let resp = handle(&app, &msg_buf, &mut totp_fail_count).await;
                 let resp_bytes = serde_json::to_vec(&resp).unwrap_or_default();
                 let resp_len = (resp_bytes.len() as u32).to_le_bytes();
                 if stream.write_all(&resp_len).await.is_err() { break; }
                 if stream.write_all(&resp_bytes).await.is_err() { break; }
+                if totp_fail_count >= 5 { break; }
             }
         });
     }
@@ -187,7 +352,7 @@ async fn run_unix(app: AppHandle) {
 
 // ── Request handler ──────────────────────────────────────────────────────────
 
-async fn handle(app: &AppHandle, raw: &[u8]) -> PipeResponse {
+async fn handle(app: &AppHandle, raw: &[u8], totp_fail_count: &mut u8) -> PipeResponse {
     let req: PipeRequest = match serde_json::from_slice(raw) {
         Ok(r) => r,
         Err(e) => {
@@ -325,9 +490,11 @@ async fn handle(app: &AppHandle, raw: &[u8]) -> PipeResponse {
                     }
                     Some(code) => {
                         if vault.verify_2fa_code(code).is_err() {
+                            *totp_fail_count += 1;
                             drop(vault_guard);
                             return PipeResponse::err(&id, "TotpInvalid");
                         }
+                        *totp_fail_count = 0;
                     }
                 }
             }
@@ -352,8 +519,7 @@ async fn handle(app: &AppHandle, raw: &[u8]) -> PipeResponse {
         }
 
         "lock" => {
-            *state.vault.lock().unwrap_or_else(|e| e.into_inner()) = None;
-            *state.vault_dir.lock().unwrap_or_else(|e| e.into_inner()) = None;
+            crate::lock_vault_internal(app);
             PipeResponse::ok(&id, Value::Null, &sk)
         }
 

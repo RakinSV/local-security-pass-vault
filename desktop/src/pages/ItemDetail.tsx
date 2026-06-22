@@ -86,9 +86,10 @@ function HibpCheckBtn({ password }: { password: string }) {
     return (
       <button
         onClick={check}
+        title="Sends the first 5 characters of the password SHA-1 hash to api.pwnedpasswords.com (k-anonymity). No other data leaves this device."
         className="text-xs text-[var(--muted)] hover:text-amber-400 transition-colors"
       >
-        Check breaches (HIBP)
+        Check breaches online (HIBP)
       </button>
     );
   }

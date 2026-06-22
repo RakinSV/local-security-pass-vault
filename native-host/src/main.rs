@@ -64,18 +64,22 @@ fn write_msg<W: Write>(w: &mut W, msg: &[u8]) -> io::Result<()> {
     w.write_all(msg)
 }
 
+// Retry parameters: 20 × 500 ms = 10 seconds total.
+// Extended from the previous 8 × 500 ms (4 s) so that opening the extension
+// immediately after launching the desktop app succeeds even on slow machines.
+const CONNECT_RETRIES: u32 = 20;
+const CONNECT_SLEEP_MS: u64 = 500;
+
 #[cfg(windows)]
 fn open_pipe() -> io::Result<std::fs::File> {
     use std::fs::OpenOptions;
-    // Named pipes on Windows are accessible via the filesystem path.
-    // Retry a few times in case the Tauri app is still starting.
     let mut last_err = io::Error::new(io::ErrorKind::ConnectionRefused, "pipe not ready");
-    for _ in 0..8 {
+    for _ in 0..CONNECT_RETRIES {
         match OpenOptions::new().read(true).write(true).open(PIPE_PATH) {
             Ok(f) => return Ok(f),
             Err(e) => {
                 last_err = e;
-                std::thread::sleep(std::time::Duration::from_millis(500));
+                std::thread::sleep(std::time::Duration::from_millis(CONNECT_SLEEP_MS));
             }
         }
     }
@@ -90,7 +94,7 @@ fn open_pipe() -> io::Result<std::fs::File> {
     use std::os::unix::io::{FromRawFd, IntoRawFd};
     use std::os::unix::net::UnixStream;
     let mut last_err = io::Error::new(io::ErrorKind::ConnectionRefused, "socket not ready");
-    for _ in 0..8 {
+    for _ in 0..CONNECT_RETRIES {
         match UnixStream::connect(PIPE_PATH) {
             Ok(s) => {
                 // Convert UnixStream → File via raw fd (same kernel fd, different Rust wrapper)
@@ -99,7 +103,7 @@ fn open_pipe() -> io::Result<std::fs::File> {
             }
             Err(e) => {
                 last_err = e;
-                std::thread::sleep(std::time::Duration::from_millis(500));
+                std::thread::sleep(std::time::Duration::from_millis(CONNECT_SLEEP_MS));
             }
         }
     }

@@ -248,10 +248,11 @@ impl Vault {
                             );
                             verify_totp(code, &secret_b32)?;
                         }
-                        // meta.totp_enabled=true но секрета в DB нет — краш при enable_2fa
-                        // между save() и write_meta(). Это состояние гонки, не tamper.
-                        // Пропускаем 2FA проверку: vault открывается нормально.
-                        _ => { /* 2FA secret lost — treat as disabled for this open */ }
+                        // meta.totp_enabled=true but TOTP secret missing from DB — indicates
+                        // data corruption or a partial write between enable_2fa save() and
+                        // write_meta().  Fail-safe: refuse to open rather than silently
+                        // bypassing 2FA (security.md: prefer fail-safe over fail-open).
+                        _ => return Err(VaultError::TwoFactorFailed),
                     }
                 }
             }

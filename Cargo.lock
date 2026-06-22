@@ -5343,7 +5343,7 @@ dependencies = [
 
 [[package]]
 name = "vaultpass-native-host"
-version = "0.2.2"
+version = "0.2.4"
 
 [[package]]
 name = "vcpkg"

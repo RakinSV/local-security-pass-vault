@@ -204,8 +204,13 @@ function detectAndPrompt(): void {
   );
 }
 
-// Run after DOM idle (manifest: run_at = document_idle)
-detectAndPrompt();
+// nativeInputValueSetter was captured at document_start (before page scripts ran).
+// Defer DOM queries until the document is parsed.
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", detectAndPrompt);
+} else {
+  detectAndPrompt();
+}
 
 // Re-check after a short delay for SPAs that insert forms asynchronously
 setTimeout(detectAndPrompt, 1_500);

@@ -1,4 +1,9 @@
 name: Security
+# L2 supply-chain note: action tags below use version tags (e.g. @v5) rather
+# than SHA-pinned digests.  For stronger supply-chain security, pin each action
+# to its commit SHA.  Use `pin-github-action` or `Dependabot` (pin-actions
+# setting) to automate this.  Example:
+#   actions/checkout@v5  →  actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v5
 
 on:
   push:
@@ -19,7 +24,7 @@ jobs:
       - name: Install build deps
         run: sudo apt-get update && sudo apt-get install -y build-essential
       - run: cargo install cargo-audit --locked
-      - run: cargo audit
+      - run: cargo audit --locked
 
   test:
     name: tests + crypto vectors
@@ -43,7 +48,7 @@ jobs:
       - name: Build deps (Linux)
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y build-essential
-      - run: cargo test ${{ matrix.cargo_args }} --all-features
+      - run: cargo test ${{ matrix.cargo_args }} --all-features --locked
 
   clippy:
     name: clippy (-D warnings)
@@ -56,7 +61,7 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y build-essential
       # Same rationale as test matrix: skip vaultpass-desktop on Linux
       # to avoid GTK system dependency requirement.
-      - run: cargo clippy -p core-vault -p vaultpass-native-host --all-targets -- -D warnings
+      - run: cargo clippy -p core-vault -p vaultpass-native-host --all-targets --locked -- -D warnings
 
   typescript:
     name: TypeScript type check

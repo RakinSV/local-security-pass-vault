@@ -145,7 +145,7 @@ LSPV takes the opposite approach. The vault never leaves your disk. There is no 
 
 ### Windows
 
-1. Download `Local Security Pass Vault_0.2.3_x64-setup.exe` from [Releases](https://github.com/RakinSV/local-security-pass-vault/releases)
+1. Download `Local Security Pass Vault_0.2.4_x64-setup.exe` from [Releases](https://github.com/RakinSV/local-security-pass-vault/releases)
 2. Run the installer — no admin rights required (per-user NSIS install)
 3. Launch **Local Security Pass Vault** from the Start menu
 4. Click **+ New Vault** and set a strong master password

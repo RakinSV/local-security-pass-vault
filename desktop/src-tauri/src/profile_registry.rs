@@ -24,8 +24,12 @@ pub fn load(data_dir: &Path) -> Registry {
 }
 
 fn save(data_dir: &Path, reg: &Registry) {
-    if let Ok(json) = serde_json::to_string_pretty(reg) {
-        let _ = std::fs::write(data_dir.join(FILE), json);
+    let Ok(json) = serde_json::to_string_pretty(reg) else { return };
+    let path = data_dir.join(FILE);
+    let tmp  = data_dir.join(format!("{FILE}.tmp"));
+    // Atomic write: write to .tmp then rename so partial writes can't corrupt the file.
+    if std::fs::write(&tmp, json.as_bytes()).is_ok() {
+        let _ = std::fs::rename(&tmp, &path);
     }
 }
 

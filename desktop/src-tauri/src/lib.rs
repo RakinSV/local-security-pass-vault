@@ -257,7 +257,7 @@ fn clear_clipboard_sync() {
 }
 
 /// Locks the vault (if open) and emits `vault-locked` to the frontend.
-fn lock_vault_internal(app: &tauri::AppHandle) {
+pub(crate) fn lock_vault_internal(app: &tauri::AppHandle) {
     let state = app.state::<state::AppState>();
 
     // 1. Выгружаем vault из памяти (guard дропается → SQLCipher закрывает файл).
@@ -344,6 +344,10 @@ pub fn run() {
             }));
 
             // ── Auto-lock idle checker (every 30 s) ───────────────────────────
+            // The poll interval is 30 s, so actual lock happens 0–30 s after
+            // the configured timeout expires.  This is intentional: a finer
+            // interval wastes CPU and is not security-relevant because the idle
+            // timer already provides a generous window configured by the user.
             let handle_al = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 loop {
@@ -381,14 +385,7 @@ pub fn run() {
                                 }
                             }
                             "lock" => {
-                                let state = app.state::<state::AppState>();
-                                if let Ok(mut guard) = state.vault.lock() {
-                                    if let Some(vault) = guard.as_ref() {
-                                        keychain::delete_vault_key(&vault.vault_id_str());
-                                    }
-                                    *guard = None;
-                                }
-                                app.emit("vault-locked", ()).ok();
+                                lock_vault_internal(app);
                                 if let Some(w) = app.get_webview_window("main") {
                                     w.hide().ok();
                                 }

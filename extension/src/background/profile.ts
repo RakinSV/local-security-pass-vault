@@ -31,16 +31,10 @@ export async function getProfileInfo(): Promise<ProfileInfo> {
     await chrome.storage.local.set({ [STORAGE_KEY]: profileId });
   }
 
-  // Google account email — only available in Chrome/Edge, not Firefox
-  let profileEmail: string | null = null;
-  try {
-    const info = await new Promise<chrome.identity.ProfileUserInfo>((resolve) => {
-      chrome.identity.getProfileUserInfo({ accountStatus: "ANY" }, resolve);
-    });
-    profileEmail = info.email || null;
-  } catch {
-    // identity API unavailable (Firefox, or permission not granted)
-  }
+  // profileEmail is intentionally null: the "identity" permission is not
+  // requested in manifest.json (would expose Google account to native host).
+  // Profile identification uses only the random UUID (profileId).
+  const profileEmail: string | null = null;
 
   cached = { profileId, profileEmail, browserType: detectBrowserType() };
   return cached;

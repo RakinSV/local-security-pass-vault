@@ -44,6 +44,7 @@ windows-sys = { version = "0.52", features = [
     "Win32_System_LibraryLoader",
     "Win32_UI_WindowsAndMessaging",
     "Win32_System_RemoteDesktop",
+    "Win32_Security",
 ] }
 
 [target.'cfg(target_os = "linux")'.dependencies]

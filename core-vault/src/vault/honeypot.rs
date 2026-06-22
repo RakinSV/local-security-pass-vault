@@ -21,8 +21,13 @@ impl HoneypotGuard {
         let data = match file::read_no_symlink(path) {
             Ok(d) => d,
             Err(VaultError::NotFound) => {
-                // Создаём honeypot со случайным содержимым.
-                let mut buf = vec![0u8; 4096];
+                // Create honeypot with random content and a random size (2–10 KiB).
+                // Variable size prevents fingerprinting by ransomware that might
+                // otherwise whitelist a known fixed-size decoy file.
+                let mut size_seed = [0u8; 4];
+                sodium::random_bytes(&mut size_seed)?;
+                let size = 2048 + (u32::from_le_bytes(size_seed) % 8193) as usize; // 2048..=10240
+                let mut buf = vec![0u8; size];
                 sodium::random_bytes(&mut buf)?;
                 file::atomic_write(path, &buf)?;
                 file::restrict_permissions(path).ok();

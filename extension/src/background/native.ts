@@ -68,7 +68,12 @@ async function verifyResponseSignature(response: NativeResponse): Promise<void> 
 
   const stored = await chrome.storage.local.get(SIGN_PK_STORAGE_KEY);
   const pkHex = stored[SIGN_PK_STORAGE_KEY] as string | undefined;
-  if (!pkHex) return; // no stored key yet — first-run grace period
+  // TOFU grace period: on first run the key hasn't been stored yet, so we accept
+  // the unsigned response and let storeSigningKeyIfNew() pin it below.  After the
+  // first successful response the key is pinned and all future responses must be
+  // signed — an attacker who does not control the local machine cannot intercept
+  // the first response without also controlling the pipe or native host binary.
+  if (!pkHex) return;
 
   try {
     const cryptoKey = await crypto.subtle.importKey(

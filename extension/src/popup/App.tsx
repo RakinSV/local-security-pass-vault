@@ -62,7 +62,7 @@ export default function App() {
   const [loading,  setLoading]  = useState(true);
   const [error,    setError]    = useState("");
   const [filling,  setFilling]  = useState<string | null>(null);
-  const [profileLabel, setProfileLabel] = useState<string | null>(null);
+  const [profileLabel] = useState<string | null>(null);
   const [genPw,    setGenPw]    = useState("");
   const [genCopied, setGenCopied] = useState(false);
 
@@ -78,10 +78,6 @@ export default function App() {
 
   async function init() {
     try {
-      chrome.identity.getProfileUserInfo({ accountStatus: "ANY" }, (info) => {
-        setProfileLabel(info.email || null);
-      });
-
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
       const url = tab?.url ?? "";
       setPageUrl(url);
