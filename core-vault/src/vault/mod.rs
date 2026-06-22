@@ -667,6 +667,30 @@ impl Vault {
         self.vault_key.as_bytes()
     }
 
+    // ── Windows DPAPI: шифрование ключей в памяти ─────────────────────────────
+
+    /// Шифрует все ключи vault DPAPI in-place (`CryptProtectMemory`).
+    /// Вызывать когда vault не используется активно (между командами).
+    /// Best-effort: при ошибке ключи остаются в открытом виде (всё ещё mlock'd).
+    #[cfg(windows)]
+    pub fn protect_keys(&mut self) {
+        self.vault_key.dpapi_protect();
+        self.keys.encryption_key.dpapi_protect();
+        self.keys.search_key.dpapi_protect();
+        self.keys.db_key.dpapi_protect();
+    }
+
+    /// Расшифровывает все ключи vault (`CryptUnprotectMemory`) перед использованием.
+    /// Возвращает `true` если все ключи успешно расшифрованы.
+    #[cfg(windows)]
+    pub fn unprotect_keys(&mut self) -> bool {
+        let a = self.vault_key.dpapi_unprotect();
+        let b = self.keys.encryption_key.dpapi_unprotect();
+        let c = self.keys.search_key.dpapi_unprotect();
+        let d = self.keys.db_key.dpapi_unprotect();
+        a && b && c && d
+    }
+
     // ── Конвертация Item ↔ ItemRow ─────────────────────────────────────────────
 
     fn item_to_row(&self, item: &Item) -> Result<ItemRow> {

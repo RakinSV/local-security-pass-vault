@@ -61,15 +61,44 @@ fn ensure_init() -> Result<()> {
 
 // ── Secure memory: Secret<N> ─────────────────────────────────────────────────
 
+// ── Windows DPAPI: CryptProtectMemory / CryptUnprotectMemory ────────────────
+// Дополнительный слой защиты поверх VirtualLock/mlock:
+// ключ шифруется DPAPI-ключом процесса, расшифровать вне процесса невозможно.
+// Размер данных должен быть кратен CRYPTPROTECTMEMORY_BLOCK_SIZE (16 байт).
+// KEY_LEN = 32 = 2 × 16. ✅
+#[cfg(windows)]
+const CRYPTPROTECT_SAME_PROCESS: u32 = 0x00000000;
+
+#[cfg(windows)]
+#[link(name = "Crypt32")]
+extern "system" {
+    fn CryptProtectMemory(
+        pDataIn: *mut std::ffi::c_void,
+        cbDataIn: u32,
+        dwFlags: u32,
+    ) -> i32;
+    fn CryptUnprotectMemory(
+        pDataIn: *mut std::ffi::c_void,
+        cbDataIn: u32,
+        dwFlags: u32,
+    ) -> i32;
+}
+
 /// Буфер секретных байт фиксированной длины с защитой памяти:
 /// `mlock` (запрет свопа) при создании, `memzero` + `munlock` при drop.
-/// Используется для всех ключей. См. crypto.md «Управление ключами в памяти».
+/// На Windows дополнительно поддерживает DPAPI-шифрование in-place
+/// (`dpapi_protect` / `dpapi_unprotect`).
 ///
 /// Хранится в куче (`Box`) — адрес стабилен, поэтому `mlock` корректен на всё
 /// время жизни значения.
 pub struct Secret<const N: usize> {
     data: Box<[u8; N]>,
     locked: bool,
+    /// На Windows: байты в `data` зашифрованы DPAPI, пока `true`.
+    /// `as_bytes()` возвращает зашифрованные байты — использовать только
+    /// после `dpapi_unprotect()`.
+    #[cfg(windows)]
+    dpapi_protected: bool,
 }
 
 impl<const N: usize> Secret<N> {
@@ -77,10 +106,16 @@ impl<const N: usize> Secret<N> {
     pub fn zeroed() -> Self {
         let mut data = Box::new([0u8; N]);
         // mlock — best-effort: на некоторых системах ограничен RLIMIT_MEMLOCK.
+        // На Windows sodium_mlock вызывает VirtualLock внутри (security.md).
         // Неудача не фатальна (ключ всё равно будет обнулён), но фиксируем флаг.
         // SAFETY: указатель валиден, длина соответствует выделению.
         let rc = unsafe { ffi::sodium_mlock(data.as_mut_ptr() as *mut _, N) };
-        Secret { data, locked: rc == 0 }
+        Secret {
+            data,
+            locked: rc == 0,
+            #[cfg(windows)]
+            dpapi_protected: false,
+        }
     }
 
     /// Секрет из среза. Длина среза должна быть ровно `N`.
@@ -114,6 +149,48 @@ impl<const N: usize> Secret<N> {
     #[inline]
     pub fn is_locked(&self) -> bool {
         self.locked
+    }
+
+    /// Шифрует байты in-place алгоритмом DPAPI (`CryptProtectMemory`,
+    /// режим `SAME_PROCESS`). После вызова `as_bytes()` возвращает
+    /// зашифрованные байты — перед использованием ключа вызвать `dpapi_unprotect()`.
+    /// Best-effort: при ошибке ключ остаётся в открытом виде (всё ещё mlock'd).
+    #[cfg(windows)]
+    pub fn dpapi_protect(&mut self) {
+        if self.dpapi_protected { return; }
+        // N кратно 16 (CRYPTPROTECTMEMORY_BLOCK_SIZE) — по контракту,
+        // KEY_LEN = 32 = 2×16 всегда выполняется.
+        // SAFETY: data валиден на N байт; DPAPI шифрует in-place.
+        let ok = unsafe {
+            CryptProtectMemory(
+                self.data.as_mut_ptr() as *mut _,
+                N as u32,
+                CRYPTPROTECT_SAME_PROCESS,
+            ) != 0
+        };
+        if ok {
+            self.dpapi_protected = true;
+        }
+    }
+
+    /// Расшифровывает байты, зашифрованные `dpapi_protect()`.
+    /// Возвращает `true` при успехе. При ошибке байты остаются зашифрованными —
+    /// использовать ключ нельзя.
+    #[cfg(windows)]
+    pub fn dpapi_unprotect(&mut self) -> bool {
+        if !self.dpapi_protected { return true; }
+        // SAFETY: data валиден на N байт; DPAPI расшифровывает in-place.
+        let ok = unsafe {
+            CryptUnprotectMemory(
+                self.data.as_mut_ptr() as *mut _,
+                N as u32,
+                CRYPTPROTECT_SAME_PROCESS,
+            ) != 0
+        };
+        if ok {
+            self.dpapi_protected = false;
+        }
+        ok
     }
 }
 

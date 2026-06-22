@@ -1,4 +1,4 @@
-use crate::error::AppError;
+﻿use crate::error::AppError;
 use crate::state::AppState;
 use core_vault::models::{ItemPayload, PasswordHistoryEntry};
 use serde::{Deserialize, Serialize};
@@ -7,7 +7,7 @@ use std::sync::atomic::Ordering;
 use tauri::{Manager, State};
 use uuid::Uuid;
 
-// ── DTOs ──────────────────────────────────────────────────────────────────────
+// в”Ђв”Ђ DTOs в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -40,7 +40,7 @@ fn subtitle_for(payload: &ItemPayload) -> Option<String> {
                 .trim_end_matches(':')
                 .to_string();
             match (!domain.is_empty(), !username.is_empty()) {
-                (true,  true)  => Some(format!("{domain} · {username}")),
+                (true,  true)  => Some(format!("{domain} В· {username}")),
                 (true,  false) => Some(domain),
                 (false, true)  => Some(username.clone()),
                 (false, false) => None,
@@ -49,9 +49,9 @@ fn subtitle_for(payload: &ItemPayload) -> Option<String> {
         ItemPayload::Card { cardholder, number, .. } => {
             let last4 = if number.len() >= 4 { &number[number.len() - 4..] } else { number.as_str() };
             if cardholder.is_empty() {
-                Some(format!("•••• {last4}"))
+                Some(format!("вЂўвЂўвЂўвЂў {last4}"))
             } else {
-                Some(format!("{cardholder} · •••• {last4}"))
+                Some(format!("{cardholder} В· вЂўвЂўвЂўвЂў {last4}"))
             }
         }
         ItemPayload::Server { host, username, .. } => match username {
@@ -93,11 +93,11 @@ pub struct ItemDto {
     pub source_tag: Option<String>,
 }
 
-// ── Commands ──────────────────────────────────────────────────────────────────
+// в”Ђв”Ђ Commands в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
 
 #[tauri::command]
 pub async fn vault_status(state: State<'_, AppState>) -> Result<VaultStatusDto, AppError> {
-    let guard = state.vault.lock().map_err(|_| AppError::LockPoisoned)?;
+    let guard = state.lock_vault_for_use()?;
     Ok(VaultStatusDto { is_locked: guard.is_none() })
 }
 
@@ -119,7 +119,7 @@ pub async fn create_vault(
     let dir = PathBuf::from(&dir_path);
     // Vault::create saves internally.
     let vault = core_vault::Vault::create(&dir, password.as_bytes(), hint)?;
-    let mut guard = state.vault.lock().map_err(|_| AppError::LockPoisoned)?;
+    let mut guard = state.lock_vault_for_use()?;
     *guard = Some(vault);
     let mut dir_guard = state.vault_dir.lock().map_err(|_| AppError::LockPoisoned)?;
     *dir_guard = Some(dir);
@@ -136,14 +136,14 @@ pub async fn open_vault(
     let dir = PathBuf::from(&dir_path);
     let vault = core_vault::Vault::open(&dir, password.as_bytes(), totp_code.as_deref())?;
 
-    // После успешного unlock — сохраняем Vault Key в OS Keychain для quick-unlock.
-    // Non-fatal: если Keychain недоступен (headless, CI), игнорируем.
+    // РџРѕСЃР»Рµ СѓСЃРїРµС€РЅРѕРіРѕ unlock вЂ” СЃРѕС…СЂР°РЅСЏРµРј Vault Key РІ OS Keychain РґР»СЏ quick-unlock.
+    // Non-fatal: РµСЃР»Рё Keychain РЅРµРґРѕСЃС‚СѓРїРµРЅ (headless, CI), РёРіРЅРѕСЂРёСЂСѓРµРј.
     let vault_uuid = vault.vault_id_str();
     if let Err(e) = crate::keychain::store_vault_key(&vault_uuid, vault.vault_key_bytes()) {
         eprintln!("keychain store failed (non-fatal): {e}");
     }
 
-    let mut guard = state.vault.lock().map_err(|_| AppError::LockPoisoned)?;
+    let mut guard = state.lock_vault_for_use()?;
     *guard = Some(vault);
     state.reset_activity();
     let mut dir_guard = state.vault_dir.lock().map_err(|_| AppError::LockPoisoned)?;
@@ -165,8 +165,8 @@ pub async fn open_vault(
 
 #[tauri::command]
 pub async fn lock_vault(state: State<'_, AppState>) -> Result<(), AppError> {
-    let mut guard = state.vault.lock().map_err(|_| AppError::LockPoisoned)?;
-    // Удаляем Vault Key из OS Keychain перед drop vault.
+    let mut guard = state.lock_vault_for_use()?;
+    // РЈРґР°Р»СЏРµРј Vault Key РёР· OS Keychain РїРµСЂРµРґ drop vault.
     if let Some(vault) = guard.as_ref() {
         crate::keychain::delete_vault_key(&vault.vault_id_str());
     }
@@ -176,7 +176,7 @@ pub async fn lock_vault(state: State<'_, AppState>) -> Result<(), AppError> {
 
 #[tauri::command]
 pub async fn list_items(state: State<'_, AppState>) -> Result<Vec<ItemSummaryDto>, AppError> {
-    let guard = state.vault.lock().map_err(|_| AppError::LockPoisoned)?;
+    let guard = state.lock_vault_for_use()?;
     let vault = guard.as_ref().ok_or(AppError::VaultLocked)?;
     let items = vault.list_items()?;
     Ok(items
@@ -199,7 +199,7 @@ pub async fn list_items(state: State<'_, AppState>) -> Result<Vec<ItemSummaryDto
 
 #[tauri::command]
 pub async fn get_item(state: State<'_, AppState>, id: String) -> Result<ItemDto, AppError> {
-    let guard = state.vault.lock().map_err(|_| AppError::LockPoisoned)?;
+    let guard = state.lock_vault_for_use()?;
     let vault = guard.as_ref().ok_or(AppError::VaultLocked)?;
     let uuid = Uuid::parse_str(&id)?;
     let item = vault.get_item(&uuid)?.ok_or(AppError::NotFound)?;
@@ -226,7 +226,7 @@ pub async fn create_item(
     favorite: bool,
     source_tag: Option<String>,
 ) -> Result<String, AppError> {
-    let mut guard = state.vault.lock().map_err(|_| AppError::LockPoisoned)?;
+    let mut guard = state.lock_vault_for_use()?;
     let vault = guard.as_mut().ok_or(AppError::VaultLocked)?;
     let payload: ItemPayload = serde_json::from_value(payload)?;
     let folder_uuid = folder_id
@@ -269,7 +269,7 @@ pub async fn update_item(
     favorite: bool,
     source_tag: Option<String>,
 ) -> Result<(), AppError> {
-    let mut guard = state.vault.lock().map_err(|_| AppError::LockPoisoned)?;
+    let mut guard = state.lock_vault_for_use()?;
     let vault = guard.as_mut().ok_or(AppError::VaultLocked)?;
     let uuid = Uuid::parse_str(&id)?;
     let mut item = vault.get_item(&uuid)?.ok_or(AppError::NotFound)?;
@@ -286,7 +286,7 @@ pub async fn update_item(
 
 #[tauri::command]
 pub async fn delete_item(state: State<'_, AppState>, id: String) -> Result<(), AppError> {
-    let mut guard = state.vault.lock().map_err(|_| AppError::LockPoisoned)?;
+    let mut guard = state.lock_vault_for_use()?;
     let vault = guard.as_mut().ok_or(AppError::VaultLocked)?;
     let uuid = Uuid::parse_str(&id)?;
     vault.delete_item(&uuid)?;
@@ -300,7 +300,7 @@ pub async fn change_master_password(
     old_password: String,
     new_password: String,
 ) -> Result<(), AppError> {
-    let mut guard = state.vault.lock().map_err(|_| AppError::LockPoisoned)?;
+    let mut guard = state.lock_vault_for_use()?;
     let vault = guard.as_mut().ok_or(AppError::VaultLocked)?;
     vault.change_master_password(old_password.as_bytes(), new_password.as_bytes())?;
     Ok(())
@@ -317,7 +317,7 @@ pub async fn get_signing_public_key(state: State<'_, AppState>) -> Result<String
         .ok_or(AppError::Other("signing key not ready".into()))
 }
 
-// ── Browser profiles ──────────────────────────────────────────────────────────
+// в”Ђв”Ђ Browser profiles в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
 
 /// Returns all Chrome profiles that have ever connected to VaultPass, sorted newest-first.
 #[tauri::command]
@@ -346,7 +346,7 @@ pub async fn set_profile_name(
     Ok(())
 }
 
-// ── Browser integration ────────────────────────────────────────────────────────
+// в”Ђв”Ђ Browser integration в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
 
 /// Returns the current list of registered extension IDs (Chrome + Firefox).
 #[tauri::command]
@@ -384,7 +384,7 @@ pub async fn get_native_host_path() -> Option<String> {
         .map(|p| p.to_string_lossy().into_owned())
 }
 
-// ── CSV import ─────────────────────────────────────────────────────────────────
+// в”Ђв”Ђ CSV import в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
 
 /// Parses a Chrome or Firefox CSV export and returns the preview rows.
 #[tauri::command]
@@ -402,7 +402,7 @@ pub async fn import_items_from_csv(
     items: Vec<crate::csv_import::ImportRow>,
     source_tag: Option<String>,
 ) -> Result<usize, AppError> {
-    let mut guard = state.vault.lock().map_err(|_| AppError::LockPoisoned)?;
+    let mut guard = state.lock_vault_for_use()?;
     let vault = guard.as_mut().ok_or(AppError::VaultLocked)?;
 
     let count = items.len();
@@ -427,7 +427,7 @@ pub async fn import_items_from_csv(
 /// Returns all distinct non-null source_tag values from live items.
 #[tauri::command]
 pub async fn list_source_tags(state: State<'_, AppState>) -> Result<Vec<String>, AppError> {
-    let guard = state.vault.lock().map_err(|_| AppError::LockPoisoned)?;
+    let guard = state.lock_vault_for_use()?;
     let vault = guard.as_ref().ok_or(AppError::VaultLocked)?;
     Ok(vault.list_source_tags()?)
 }
@@ -439,15 +439,15 @@ pub async fn bulk_retag_items(
     old_tag: String,
     new_tag: Option<String>,
 ) -> Result<usize, AppError> {
-    let mut guard = state.vault.lock().map_err(|_| AppError::LockPoisoned)?;
+    let mut guard = state.lock_vault_for_use()?;
     let vault = guard.as_mut().ok_or(AppError::VaultLocked)?;
     Ok(vault.update_source_tag_bulk(&old_tag, new_tag.as_deref())?)
 }
 
-// ── Backup (BIP-39 + BLAKE3, ADR-003) ─────────────────────────────────────────
+// в”Ђв”Ђ Backup (BIP-39 + BLAKE3, ADR-003) в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
 
 /// Generates a 24-word BIP-39 mnemonic (256-bit entropy) for backup encryption.
-/// Show to user ONCE — VaultPass never stores the mnemonic on disk.
+/// Show to user ONCE вЂ” VaultPass never stores the mnemonic on disk.
 #[tauri::command]
 pub async fn generate_seed_phrase() -> Result<String, AppError> {
     Ok(core_vault::Vault::generate_backup_phrase()?)
@@ -470,7 +470,7 @@ pub async fn export_backup(
     seed_phrase: String,
 ) -> Result<(), AppError> {
     {
-        let guard = state.vault.lock().map_err(|_| AppError::LockPoisoned)?;
+        let guard = state.lock_vault_for_use()?;
         let vault = guard.as_ref().ok_or(AppError::VaultLocked)?;
         vault.export_backup(std::path::Path::new(&backup_path), &seed_phrase)?;
     }
@@ -597,7 +597,7 @@ pub async fn restore_backup(
     Ok(())
 }
 
-// ── Utility ────────────────────────────────────────────────────────────────────
+// в”Ђв”Ђ Utility в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
 
 /// Returns a suggested directory path for a new vault based on the app data dir.
 /// Path format: <app_data>/vaults/<sanitized_name>
@@ -632,7 +632,7 @@ pub async fn open_github() -> Result<(), AppError> {
         .map_err(|e| AppError::Other(e.to_string()))
 }
 
-// ── OS Keychain ────────────────────────────────────────────────────────────────
+// в”Ђв”Ђ OS Keychain в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
 
 /// Returns true if a Vault Key is stored in the OS Keychain for `vault_uuid`.
 /// Used by UI to decide whether to show the quick-unlock option.
@@ -649,7 +649,7 @@ pub async fn keychain_delete_key(vault_uuid: String) -> Result<(), AppError> {
     Ok(())
 }
 
-// ── Autostart ──────────────────────────────────────────────────────────────────
+// в”Ђв”Ђ Autostart в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
 
 #[cfg(target_os = "windows")]
 const AUTOSTART_REG_KEY: &str = "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run";
@@ -773,7 +773,7 @@ fn set_autostart_impl(_enable: bool) -> Result<(), AppError> {
     Err(AppError::Other("Autostart not supported on this platform".into()))
 }
 
-// ── Auto-lock ──────────────────────────────────────────────────────────────────
+// в”Ђв”Ђ Auto-lock в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -815,7 +815,7 @@ pub async fn activity_ping(state: State<'_, AppState>) -> Result<(), AppError> {
     Ok(())
 }
 
-// ── TOTP 2FA ──────────────────────────────────────────────────────────────────
+// в”Ђв”Ђ TOTP 2FA в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
 
 /// Generates the current 6-digit TOTP code from a Base32 secret.
 /// Returns the code and the number of seconds until the next code.
@@ -848,7 +848,7 @@ pub async fn decode_qr_from_clipboard() -> Result<QrResult, AppError> {
                 "No image found on clipboard. Copy the QR code image first.".into()
             ))?;
 
-        // 2. Convert arboard RGBA bytes → image::GrayImage (luma8) for rqrr
+        // 2. Convert arboard RGBA bytes в†’ image::GrayImage (luma8) for rqrr
         let rgba = image::RgbaImage::from_raw(
             img_data.width as u32,
             img_data.height as u32,
@@ -895,7 +895,7 @@ pub async fn decode_qr_from_clipboard() -> Result<QrResult, AppError> {
     .map_err(|e| AppError::Other(format!("clipboard task panicked: {e}")))?
 }
 
-// ── Browser Extension Installer ────────────────────────────────────────────────
+// в”Ђв”Ђ Browser Extension Installer в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
 
 /// Detects all installed Chromium-based browsers and Firefox, along with their profiles.
 #[tauri::command]
@@ -918,7 +918,7 @@ pub async fn install_extension_to_browsers(
     .map_err(|e| AppError::Other(format!("install task panicked: {e}")))?)
 }
 
-// ── Keychain vault status ──────────────────────────────────────────────────────
+// в”Ђв”Ђ Keychain vault status в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -934,7 +934,7 @@ pub struct KeychainVaultStatus {
 pub async fn keychain_vault_status(
     state: State<'_, AppState>,
 ) -> Result<KeychainVaultStatus, AppError> {
-    let guard = state.vault.lock().map_err(|_| AppError::LockPoisoned)?;
+    let guard = state.lock_vault_for_use()?;
     match guard.as_ref() {
         None => Ok(KeychainVaultStatus {
             vault_open: false,
@@ -953,12 +953,12 @@ pub async fn keychain_vault_status(
     }
 }
 
-// ── Trash (soft-delete management) ────────────────────────────────────────────
+// в”Ђв”Ђ Trash (soft-delete management) в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
 
 /// Lists all soft-deleted items (the trash bin).
 #[tauri::command]
 pub async fn list_deleted_items(state: State<'_, AppState>) -> Result<Vec<ItemSummaryDto>, AppError> {
-    let guard = state.vault.lock().map_err(|_| AppError::LockPoisoned)?;
+    let guard = state.lock_vault_for_use()?;
     let vault = guard.as_ref().ok_or(AppError::VaultLocked)?;
     let items = vault.list_deleted_items()?;
     Ok(items
@@ -982,7 +982,7 @@ pub async fn list_deleted_items(state: State<'_, AppState>) -> Result<Vec<ItemSu
 /// Restores a soft-deleted item back to the vault.
 #[tauri::command]
 pub async fn restore_item(state: State<'_, AppState>, id: String) -> Result<(), AppError> {
-    let mut guard = state.vault.lock().map_err(|_| AppError::LockPoisoned)?;
+    let mut guard = state.lock_vault_for_use()?;
     let vault = guard.as_mut().ok_or(AppError::VaultLocked)?;
     let uuid = Uuid::parse_str(&id)?;
     vault.restore_item(&uuid)?;
@@ -993,7 +993,7 @@ pub async fn restore_item(state: State<'_, AppState>, id: String) -> Result<(), 
 /// Permanently deletes one item from the trash bin.
 #[tauri::command]
 pub async fn purge_item(state: State<'_, AppState>, id: String) -> Result<(), AppError> {
-    let mut guard = state.vault.lock().map_err(|_| AppError::LockPoisoned)?;
+    let mut guard = state.lock_vault_for_use()?;
     let vault = guard.as_mut().ok_or(AppError::VaultLocked)?;
     let uuid = Uuid::parse_str(&id)?;
     vault.purge_item(&uuid)?;
@@ -1004,14 +1004,14 @@ pub async fn purge_item(state: State<'_, AppState>, id: String) -> Result<(), Ap
 /// Permanently deletes ALL items from the trash bin. Returns count deleted.
 #[tauri::command]
 pub async fn purge_all_trash(state: State<'_, AppState>) -> Result<usize, AppError> {
-    let mut guard = state.vault.lock().map_err(|_| AppError::LockPoisoned)?;
+    let mut guard = state.lock_vault_for_use()?;
     let vault = guard.as_mut().ok_or(AppError::VaultLocked)?;
     let n = vault.purge_all_trash()?;
     vault.save()?;
     Ok(n)
 }
 
-// ── Folders ────────────────────────────────────────────────────────────────────
+// в”Ђв”Ђ Folders в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -1025,7 +1025,7 @@ pub struct FolderDto {
 /// Lists all folders.
 #[tauri::command]
 pub async fn list_folders(state: State<'_, AppState>) -> Result<Vec<FolderDto>, AppError> {
-    let guard = state.vault.lock().map_err(|_| AppError::LockPoisoned)?;
+    let guard = state.lock_vault_for_use()?;
     let vault = guard.as_ref().ok_or(AppError::VaultLocked)?;
     let folders = vault.list_folders()?;
     Ok(folders
@@ -1046,7 +1046,7 @@ pub async fn add_folder(
     name: String,
     icon: Option<String>,
 ) -> Result<String, AppError> {
-    let mut guard = state.vault.lock().map_err(|_| AppError::LockPoisoned)?;
+    let mut guard = state.lock_vault_for_use()?;
     let vault = guard.as_mut().ok_or(AppError::VaultLocked)?;
     let id = vault.add_folder(&name, None, icon)?;
     vault.save()?;
@@ -1056,7 +1056,7 @@ pub async fn add_folder(
 /// Deletes a folder. Items inside get folder_id = NULL (moved to root).
 #[tauri::command]
 pub async fn delete_folder(state: State<'_, AppState>, id: String) -> Result<(), AppError> {
-    let mut guard = state.vault.lock().map_err(|_| AppError::LockPoisoned)?;
+    let mut guard = state.lock_vault_for_use()?;
     let vault = guard.as_mut().ok_or(AppError::VaultLocked)?;
     let uuid = Uuid::parse_str(&id)?;
     vault.delete_folder(&uuid)?;
@@ -1070,14 +1070,14 @@ pub async fn rename_folder(
     id: String,
     name: String,
 ) -> Result<(), AppError> {
-    let mut guard = state.vault.lock().map_err(|_| AppError::LockPoisoned)?;
+    let mut guard = state.lock_vault_for_use()?;
     let vault = guard.as_mut().ok_or(AppError::VaultLocked)?;
     let uuid = Uuid::parse_str(&id)?;
     vault.rename_folder(&uuid, &name)?;
     Ok(())
 }
 
-// ── Bitwarden JSON import ──────────────────────────────────────────────────────
+// в”Ђв”Ђ Bitwarden JSON import в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
 
 #[derive(Debug, serde::Deserialize)]
 struct BitwardenJson {
@@ -1139,7 +1139,7 @@ pub async fn import_bitwarden_json(
     let bw: BitwardenJson = serde_json::from_str(&content)
         .map_err(|e| AppError::Other(format!("Invalid Bitwarden JSON: {e}")))?;
 
-    let mut guard = state.vault.lock().map_err(|_| AppError::LockPoisoned)?;
+    let mut guard = state.lock_vault_for_use()?;
     let vault = guard.as_mut().ok_or(AppError::VaultLocked)?;
 
     let mut count = 0usize;
@@ -1226,7 +1226,7 @@ pub async fn import_bitwarden_json(
     Ok(count)
 }
 
-// ── Password health report ─────────────────────────────────────────────────────
+// в”Ђв”Ђ Password health report в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -1240,14 +1240,14 @@ pub struct HealthEntryDto {
     pub updated_at: i64,
 }
 
-// ── Vault 2FA ─────────────────────────────────────────────────────────────────
+// в”Ђв”Ђ Vault 2FA в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
 
 /// Checks if the vault at `dir_path` requires a TOTP code to unlock.
-/// Reads vault.meta without decrypting the vault — safe to call before open.
+/// Reads vault.meta without decrypting the vault вЂ” safe to call before open.
 #[tauri::command]
 pub async fn vault_requires_2fa(dir_path: String) -> Result<bool, AppError> {
     let meta_path = std::path::Path::new(&dir_path).join("vault.meta");
-    // Refuse symlinks — same policy as vault open.
+    // Refuse symlinks вЂ” same policy as vault open.
     let lstat = meta_path.symlink_metadata().map_err(|_| AppError::NotFound)?;
     if lstat.file_type().is_symlink() {
         return Err(AppError::Other("symlink detected on vault.meta".into()));
@@ -1264,7 +1264,7 @@ pub async fn vault_requires_2fa(dir_path: String) -> Result<bool, AppError> {
 /// Returns true if the currently open vault has 2FA enabled.
 #[tauri::command]
 pub async fn vault_has_2fa(state: State<'_, AppState>) -> Result<bool, AppError> {
-    let guard = state.vault.lock().map_err(|_| AppError::LockPoisoned)?;
+    let guard = state.lock_vault_for_use()?;
     let vault = guard.as_ref().ok_or(AppError::VaultLocked)?;
     Ok(vault.has_2fa())
 }
@@ -1304,12 +1304,12 @@ fn uri_to_qr_svg(uri: &str) -> String {
 }
 
 /// Generates a fresh TOTP secret for 2FA setup. Returns `{secret, uri, qr_svg}`.
-/// Does NOT enable 2FA yet — call `confirm_vault_2fa` after the user scans and verifies.
+/// Does NOT enable 2FA yet вЂ” call `confirm_vault_2fa` after the user scans and verifies.
 #[tauri::command]
 pub async fn setup_vault_2fa(
     state: State<'_, AppState>,
 ) -> Result<VaultTwoFaSetup, AppError> {
-    let guard = state.vault.lock().map_err(|_| AppError::LockPoisoned)?;
+    let guard = state.lock_vault_for_use()?;
     let vault = guard.as_ref().ok_or(AppError::VaultLocked)?;
     let (secret, uri) = vault.generate_2fa_secret()?;
     let qr_svg = uri_to_qr_svg(&uri);
@@ -1323,7 +1323,7 @@ pub async fn confirm_vault_2fa(
     secret: String,
     code: String,
 ) -> Result<(), AppError> {
-    let mut guard = state.vault.lock().map_err(|_| AppError::LockPoisoned)?;
+    let mut guard = state.lock_vault_for_use()?;
     let vault = guard.as_mut().ok_or(AppError::VaultLocked)?;
     vault.enable_2fa(&secret, &code)?;
     Ok(())
@@ -1335,7 +1335,7 @@ pub async fn disable_vault_2fa(
     state: State<'_, AppState>,
     code: String,
 ) -> Result<(), AppError> {
-    let mut guard = state.vault.lock().map_err(|_| AppError::LockPoisoned)?;
+    let mut guard = state.lock_vault_for_use()?;
     let vault = guard.as_mut().ok_or(AppError::VaultLocked)?;
     vault.disable_2fa(&code)?;
     Ok(())
@@ -1344,7 +1344,7 @@ pub async fn disable_vault_2fa(
 /// Analyses all Login items and returns health issues.
 #[tauri::command]
 pub async fn get_health_report(state: State<'_, AppState>) -> Result<Vec<HealthEntryDto>, AppError> {
-    let guard = state.vault.lock().map_err(|_| AppError::LockPoisoned)?;
+    let guard = state.lock_vault_for_use()?;
     let vault = guard.as_ref().ok_or(AppError::VaultLocked)?;
     let entries = vault.health_report()?;
     Ok(entries
@@ -1361,7 +1361,7 @@ pub async fn get_health_report(state: State<'_, AppState>) -> Result<Vec<HealthE
         .collect())
 }
 
-// ── CSV Export ─────────────────────────────────────────────────────────────────
+// в”Ђв”Ђ CSV Export в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
 
 /// Opens a native save-file dialog for choosing a CSV export path.
 #[tauri::command]
@@ -1378,7 +1378,7 @@ pub async fn pick_csv_save_path() -> Option<String> {
 /// Exports all Login items to a CSV file at the given path.
 #[tauri::command]
 pub async fn export_items_csv(state: State<'_, AppState>, path: String) -> Result<(), AppError> {
-    let guard = state.vault.lock().map_err(|_| AppError::LockPoisoned)?;
+    let guard = state.lock_vault_for_use()?;
     let vault = guard.as_ref().ok_or(AppError::VaultLocked)?;
     let csv = vault.export_items_csv()?;
     std::fs::write(&path, csv.as_bytes())
@@ -1386,13 +1386,13 @@ pub async fn export_items_csv(state: State<'_, AppState>, path: String) -> Resul
     Ok(())
 }
 
-// ── Screen capture protection ──────────────────────────────────────────────────
+// в”Ђв”Ђ Screen capture protection в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
 
 /// On Windows: applies or removes WDA_EXCLUDEFROMCAPTURE so the window is
 /// invisible to screen-capture tools (OBS, PrintScreen, thumbnail cache)
 /// while a plaintext password is visible in the UI.
 ///
-/// On other platforms this is a no-op — the frontend still calls it
+/// On other platforms this is a no-op вЂ” the frontend still calls it
 /// so the code path is the same everywhere.
 #[tauri::command]
 pub async fn set_screen_capture_protection(
@@ -1414,7 +1414,7 @@ pub async fn set_screen_capture_protection(
         if let RawWindowHandle::Win32(h) = handle.as_raw() {
             let hwnd = h.hwnd.get();
             let affinity = if enabled { WDA_EXCLUDEFROMCAPTURE } else { WDA_NONE };
-            // SAFETY: hwnd is the handle of our own window — always valid here.
+            // SAFETY: hwnd is the handle of our own window вЂ” always valid here.
             unsafe { SetWindowDisplayAffinity(hwnd, affinity); }
         }
     }
@@ -1423,7 +1423,7 @@ pub async fn set_screen_capture_protection(
     Ok(())
 }
 
-// ── HaveIBeenPwned k-anonymity breach check ────────────────────────────────────
+// в”Ђв”Ђ HaveIBeenPwned k-anonymity breach check в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -1433,7 +1433,7 @@ pub struct HibpResult {
 }
 
 /// Checks whether a password appears in the HaveIBeenPwned breach database
-/// using the k-anonymity API — only the first 5 characters of the SHA-1 hash
+/// using the k-anonymity API вЂ” only the first 5 characters of the SHA-1 hash
 /// are transmitted; the server never sees the full password.
 ///
 /// Returns pwned_count = 0 when not found.  checked = false when offline.
@@ -1441,7 +1441,7 @@ pub struct HibpResult {
 pub async fn check_password_breach(password: String) -> Result<HibpResult, AppError> {
     use sha1::{Digest, Sha1};
 
-    // Compute SHA-1 locally — never sent in full.
+    // Compute SHA-1 locally вЂ” never sent in full.
     let hash_bytes = Sha1::digest(password.as_bytes());
     let hash_hex: String = hash_bytes.iter().map(|b| format!("{b:02X}")).collect();
     let prefix  = &hash_hex[..5];
@@ -1478,7 +1478,7 @@ pub async fn check_password_breach(password: String) -> Result<HibpResult, AppEr
     Ok(HibpResult { pwned_count, checked: true })
 }
 
-// ── Secure clipboard write ────────────────────────────────────────────────────
+// в”Ђв”Ђ Secure clipboard write в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
 
 /// Copies `text` to the system clipboard while excluding it from Windows cloud
 /// clipboard sync and clipboard history (via CF_EXCLUDEFROMCLOUDCLIPBOARD markers).
@@ -1542,11 +1542,11 @@ fn clipboard_write_win32(text: &str) -> Result<(), AppError> {
             GlobalUnlock(hmem);
             SetClipboardData(CF_UNICODETEXT, hmem);
 
-            // "ExcludeClipboardContentFromMonitorProcessing" — presence of this
+            // "ExcludeClipboardContentFromMonitorProcessing" вЂ” presence of this
             // format signals clipboard monitors to skip this entry entirely,
             // preventing cloud sync (Microsoft Clipboard History sync, OneDrive, etc.).
             //
-            // "CanIncludeInClipboardHistory" with NULL handle — Windows 10 1809+
+            // "CanIncludeInClipboardHistory" with NULL handle вЂ” Windows 10 1809+
             // clipboard history respects this: NULL = exclude from local history too.
             for name in &[
                 "ExcludeClipboardContentFromMonitorProcessing\0",
