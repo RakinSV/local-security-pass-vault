@@ -209,7 +209,7 @@ async fn handle(app: &AppHandle, raw: &[u8]) -> PipeResponse {
     }
 
     let state = app.state::<AppState>();
-    let sk_guard = state.sign_sk.lock().unwrap();
+    let sk_guard = state.sign_sk.lock().unwrap_or_else(|e| e.into_inner());
     let sk = match sk_guard.as_ref() {
         Some(k) => k.clone(),
         None => return PipeResponse::err(&id, "signing key not available"),
@@ -218,7 +218,7 @@ async fn handle(app: &AppHandle, raw: &[u8]) -> PipeResponse {
 
     match req.action.as_str() {
         "status" => {
-            let vault_guard = state.vault.lock().unwrap();
+            let vault_guard = state.vault.lock().unwrap_or_else(|e| e.into_inner());
             let is_locked = vault_guard.is_none();
             let has_2fa = vault_guard.as_ref().map(|v| v.has_2fa()).unwrap_or(false);
             let item_count: usize = if let Some(v) = vault_guard.as_ref() {
@@ -228,7 +228,7 @@ async fn handle(app: &AppHandle, raw: &[u8]) -> PipeResponse {
             };
             drop(vault_guard);
             // Include public key so the extension can do TOFU signature verification.
-            let pk_hex = state.sign_pk_hex.lock().unwrap().clone().unwrap_or_default();
+            let pk_hex = state.sign_pk_hex.lock().unwrap_or_else(|e| e.into_inner()).clone().unwrap_or_default();
             PipeResponse::ok(
                 &id,
                 serde_json::json!({
@@ -255,7 +255,7 @@ async fn handle(app: &AppHandle, raw: &[u8]) -> PipeResponse {
                 .unwrap_or("")
                 .to_owned();
 
-            let vault_guard = state.vault.lock().unwrap();
+            let vault_guard = state.vault.lock().unwrap_or_else(|e| e.into_inner());
             let vault = match vault_guard.as_ref() {
                 Some(v) => v,
                 None => return PipeResponse::err(&id, "VaultLocked"),
@@ -310,7 +310,7 @@ async fn handle(app: &AppHandle, raw: &[u8]) -> PipeResponse {
                 Err(_) => return PipeResponse::err(&id, "invalid item id"),
             };
 
-            let vault_guard = state.vault.lock().unwrap();
+            let vault_guard = state.vault.lock().unwrap_or_else(|e| e.into_inner());
             let vault = match vault_guard.as_ref() {
                 Some(v) => v,
                 None => return PipeResponse::err(&id, "VaultLocked"),
@@ -352,8 +352,8 @@ async fn handle(app: &AppHandle, raw: &[u8]) -> PipeResponse {
         }
 
         "lock" => {
-            *state.vault.lock().unwrap() = None;
-            *state.vault_dir.lock().unwrap() = None;
+            *state.vault.lock().unwrap_or_else(|e| e.into_inner()) = None;
+            *state.vault_dir.lock().unwrap_or_else(|e| e.into_inner()) = None;
             PipeResponse::ok(&id, Value::Null, &sk)
         }
 

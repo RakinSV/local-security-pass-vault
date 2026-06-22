@@ -1,0 +1,48 @@
+# cargo audit configuration — advisories that are suppressed because they come
+# from transitive dependencies (primarily Tauri's Linux GTK stack) that we
+# cannot update directly.  Each entry has a comment explaining why it is safe
+# to ignore in this project.
+
+[advisories]
+ignore = [
+    # ── Tauri GTK3 Linux stack (gtk-rs 0.18) ────────────────────────────────
+    # All nine crates below are flagged "unmaintained" because the gtk-rs team
+    # migrated from GTK3 to GTK4.  Tauri 2 still ships GTK3 bindings on Linux;
+    # upgrading requires a new Tauri major version.  Our Windows target (the
+    # primary release platform) does not pull these crates at all.
+    "RUSTSEC-2024-0413",  # atk
+    "RUSTSEC-2024-0416",  # atk-sys
+    "RUSTSEC-2024-0412",  # gdk
+    "RUSTSEC-2024-0418",  # gdk-sys
+    "RUSTSEC-2024-0411",  # gdkwayland-sys
+    "RUSTSEC-2024-0417",  # gdkx11
+    "RUSTSEC-2024-0414",  # gdkx11-sys
+    "RUSTSEC-2024-0415",  # gtk
+    "RUSTSEC-2024-0420",  # gtk-sys
+    "RUSTSEC-2024-0419",  # gtk3-macros
+
+    # glib 0.18.5 — "unsound" VariantStrIter impl (Stacked Borrows violation).
+    # This is deep inside Tauri's GTK rendering path on Linux.
+    # We do not use glib::VariantStrIter anywhere in our code; the unsoundness
+    # is only reachable if the iterator is constructed and iterated, which never
+    # happens in VaultPass.  Linux-only; not present on Windows.
+    "RUSTSEC-2024-0429",  # glib
+
+    # ── Unmaintained proc-macro / utility crates ─────────────────────────────
+    # These are transitive Tauri / SQLCipher build-time dependencies.
+    # They are only used during compilation; they produce no runtime code that
+    # ships in the final binary.
+    "RUSTSEC-2024-0388",  # derivative — unmaintained, Tauri transitive dep
+    "RUSTSEC-2024-0384",  # instant    — unmaintained, Tauri transitive dep
+    "RUSTSEC-2024-0370",  # proc-macro-error — unmaintained, build-time only
+
+    # ── unic-* crates (Unicode identifier utilities) ─────────────────────────
+    # Pulled in by the `toml_edit` / `proc-macro2` chain inside Tauri's build
+    # scripts.  All five are flagged as unmaintained.  They produce no runtime
+    # code; used only in build-time token parsing.
+    "RUSTSEC-2025-0081",  # unic-char-property
+    "RUSTSEC-2025-0075",  # unic-char-range
+    "RUSTSEC-2025-0080",  # unic-common
+    "RUSTSEC-2025-0100",  # unic-ucd-ident
+    "RUSTSEC-2025-0098",  # unic-ucd-version
+]
