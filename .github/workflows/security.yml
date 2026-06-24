@@ -24,7 +24,7 @@ jobs:
       - name: Install build deps
         run: sudo apt-get update && sudo apt-get install -y build-essential
       - run: cargo install cargo-audit --locked
-      - run: cargo audit --locked
+      - run: cargo audit
 
   test:
     name: tests + crypto vectors

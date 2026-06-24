@@ -176,27 +176,28 @@ async fn watch_linux_screensaver(app: tauri::AppHandle) {
 async fn watch_linux_screensaver_inner(
     app: &tauri::AppHandle,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    use zbus::{Connection, MatchRule, MessageStream};
     use futures_util::StreamExt as _;
+    use zbus::{Connection, MatchRule, MessageStream};
 
     let conn = Connection::session().await?;
 
+    // zbus v4 removed Connection::add_match_rule; use MessageStream::for_match_rule
+    // to create per-rule filtered streams, then merge them.
+    let mut streams: Vec<MessageStream> = Vec::new();
     for iface in &["org.freedesktop.ScreenSaver", "org.gnome.ScreenSaver"] {
         let rule = MatchRule::builder()
             .msg_type(zbus::message::Type::Signal)
             .interface(*iface)?
             .member("ActiveChanged")?
             .build();
-        conn.add_match_rule(rule).await.ok();
+        if let Ok(s) = MessageStream::for_match_rule(rule, &conn, None).await {
+            streams.push(s);
+        }
     }
 
-    let mut stream = MessageStream::from(&conn);
-    while let Some(msg) = stream.next().await {
+    let mut merged = futures_util::stream::select_all(streams);
+    while let Some(msg) = merged.next().await {
         let msg = msg?;
-        // Filter: only handle ActiveChanged signals
-        if msg.header().member().map(|m| m.as_str()) != Some("ActiveChanged") {
-            continue;
-        }
         // The body is a single bool: true = screensaver/lock active.
         if let Ok(active) = msg.body().deserialize::<bool>() {
             if active {

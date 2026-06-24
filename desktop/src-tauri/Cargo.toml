@@ -52,6 +52,7 @@ rfd          = { version = "0.14", default-features = false, features = ["gtk3"]
 libc         = "0.2"
 seccompiler  = "0.4"
 zbus         = { version = "4", default-features = false, features = ["tokio"] }
+futures-util = { version = "0.3", default-features = false, features = ["std"] }
 
 [lints.clippy]
 unwrap_used = "warn"

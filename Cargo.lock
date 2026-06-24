@@ -5317,6 +5317,7 @@ dependencies = [
  "arboard",
  "core-vault",
  "csv",
+ "futures-util",
  "hex",
  "image 0.25.10",
  "keyring",
